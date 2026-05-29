@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment — never commit secrets
+.env
+client/.env
+
+# Python
+client/.venv/
+client/__pycache__/
+client/parsers/__pycache__/
+client/prompts/__pycache__/
+**/__pycache__/
+*.pyc
+
+# Logs & reports
+*.log
+client/report.json
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
