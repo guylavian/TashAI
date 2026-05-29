@@ -161,6 +161,15 @@ def switch(host: str | None, vendor: str, username: str | None, password: str | 
     _save(output, results, label)
 
 
+# ─── chat ─────────────────────────────────────────────────────────────────────
+
+@cli.command()
+def chat():
+    """Live interactive chat with auto-routing and streaming."""
+    import chat as chat_module
+    chat_module.main()
+
+
 # ─── models ───────────────────────────────────────────────────────────────────
 
 @cli.command()
