@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: llm-relay
+    static_configs:
+      # host.docker.internal reaches the Mac host from inside a Docker container
+      - targets: ['host.docker.internal:3100']
+    metrics_path: /metrics

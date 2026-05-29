@@ -6,6 +6,7 @@ import { computeRoutes } from "./routes/compute";
 import { modelsRoutes } from "./routes/models";
 import { webhooksRoutes } from "./routes/webhooks";
 import { openaiCompatRoutes } from "./routes/openai";
+import { metricsRoutes } from "./routes/metrics";
 import { registerErrorHandler } from "./middleware/errorHandler";
 import { ping } from "./services/lmStudio";
 
@@ -52,6 +53,7 @@ async function bootstrap() {
   await app.register(computeRoutes);
   await app.register(modelsRoutes);
   await app.register(webhooksRoutes);
+  await app.register(metricsRoutes); // GET /metrics — Prometheus scrape endpoint
 
   await app.listen({ port: config.server.port, host: config.server.host });
   app.log.info(`LLM Relay running at http://${config.server.host}:${config.server.port}`);

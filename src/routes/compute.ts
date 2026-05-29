@@ -6,6 +6,13 @@ import { chat, chatStream } from "../services/lmStudio";
 import { classify } from "../services/classifier";
 import * as webhookService from "../services/webhook";
 import { config } from "../config";
+import {
+  activeRequests,
+  classifierConfidence,
+  requestDuration,
+  requestsTotal,
+  tokensTotal,
+} from "../services/metrics";
 
 type ComputeBody = z.infer<typeof ComputeRequestSchema>;
 
@@ -38,33 +45,50 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
   app.post("/compute/auto", async (req, reply) => {
     const body = parseBody(req.body);
     const start = Date.now();
+    activeRequests.inc();
 
-    const classification = await classify(body.messages);
+    try {
+      const classification = await classify(body.messages);
+      const category = classification.category;
 
-    const model =
-      body.model ||
-      (classification.confidence >= config.classifier.confidenceThreshold
-        ? classification.recommended_model
-        : config.routing.default) ||
-      "";
+      classifierConfidence.observe({ category }, classification.confidence);
 
-    if (!model) {
-      return reply.status(503).send({
-        error: "No model resolved — set ROUTE_DEFAULT or provide a model in the request body",
-        classification,
+      const model =
+        body.model ||
+        (classification.confidence >= config.classifier.confidenceThreshold
+          ? classification.recommended_model
+          : config.routing.default) ||
+        "";
+
+      if (!model) {
+        requestsTotal.inc({ model: "none", category, status: "error" });
+        return reply.status(503).send({
+          error: "No model resolved — set ROUTE_DEFAULT or provide a model in the request body",
+          classification,
+        });
+      }
+
+      if (body.stream) return streamResponse(req, reply, model, body, classification);
+
+      const completion = await chat(model, body.messages, {
+        temperature: body.temperature,
+        max_tokens: body.max_tokens,
+        top_p: body.top_p,
+        stop: body.stop,
       });
+
+      const latency = Date.now() - start;
+      requestsTotal.inc({ model, category, status: "ok" });
+      requestDuration.observe({ model, category }, latency);
+      if (completion.usage) {
+        tokensTotal.inc({ model, token_type: "prompt" }, completion.usage.prompt_tokens);
+        tokensTotal.inc({ model, token_type: "completion" }, completion.usage.completion_tokens);
+      }
+
+      return reply.send({ ...buildResponse(completion, model, latency), classification });
+    } finally {
+      activeRequests.dec();
     }
-
-    if (body.stream) return streamResponse(req, reply, model, body, classification);
-
-    const completion = await chat(model, body.messages, {
-      temperature: body.temperature,
-      max_tokens: body.max_tokens,
-      top_p: body.top_p,
-      stop: body.stop,
-    });
-
-    return reply.send({ ...buildResponse(completion, model, Date.now() - start), classification });
   });
 
   // ─── Pinned model ──────────────────────────────────────────────────────────
