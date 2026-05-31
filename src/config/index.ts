@@ -30,6 +30,13 @@ export const config = {
     model: optional("CLASSIFIER_MODEL", ""),
     confidenceThreshold: parseFloat(optional("CLASSIFIER_CONFIDENCE_THRESHOLD", "0.75")),
     maxTokens: parseInt(optional("CLASSIFIER_MAX_TOKENS", "200"), 10),
+    // Generous enough that a cold model load completes instead of falling back
+    // to the default model. Lower it if your classifier model stays warm.
+    timeoutMs: parseInt(optional("CLASSIFIER_TIMEOUT_MS", "12000"), 10),
+    // Second-stage selector model (option B). Empty falls back to ROUTE_DEFAULT
+    // in the classifier wrapper. Set to a stronger model to re-classify the
+    // low-confidence long tail before defaulting.
+    fallbackModel: optional("CLASSIFIER_FALLBACK_MODEL", ""),
     enabled: optional("CLASSIFIER_ENABLED", "true") === "true",
   },
 

@@ -1,4 +1,8 @@
 import { z } from "zod";
+// Type-only imports — erased at runtime, so the engine ↔ types reference is a
+// pure type cycle with no runtime require loop.
+import type { Classification } from "../services/routing/engine";
+import type { InfraCategory } from "../services/routing/infra-taxonomy";
 
 export const MessageSchema = z.object({
   role: z.enum(["system", "user", "assistant", "tool"]),
@@ -29,20 +33,15 @@ export type Message = z.infer<typeof MessageSchema>;
 export type ComputeRequest = z.infer<typeof ComputeRequestSchema>;
 export type WebhookRegister = z.infer<typeof WebhookRegisterSchema>;
 
-export interface ClassificationResult {
-  category:
-    | "network"        // Cisco, Alteon, F5 BigIP/WAF, Checkpoint/PaloAlto/Juniper, BGP, VLANs
-    | "openshift"      // OpenShift/OCP, pods, routes, oc CLI, DeploymentConfig, operators
-    | "windows"        // AD, DC, DNS, DHCP, GPO, SCCM, Exchange, SharePoint, SCOM, DFSR
-    | "security"       // QRadar, Trellix, firewall policy, CVEs, threats, compliance
-    | "monitoring"     // Prometheus, Splunk, Omnibus, Grafana, metrics, alerts, capacity
-    | "automation"     // Ansible, Terraform, PowerShell, bash, CI/CD, Satellite
-    | "general";       // VMware, NetApp, Kafka, Redis, MongoDB, RHBK, RHEL, anything else
-  complexity: "simple" | "medium" | "complex";
-  recommended_model: string | null;
-  confidence: number;
-  reasoning?: string | undefined;
-}
+/**
+ * Single source of truth: derived from the engine's generic `Classification`
+ * bound to the taxonomy's category union, so a taxonomy change can't leave a
+ * stale hand-written union here. Shape: { category, complexity,
+ * recommended_model, confidence, reasoning? }. Categories are defined in
+ * infra-taxonomy.ts (network/openshift/windows/security/monitoring/automation/
+ * general).
+ */
+export type ClassificationResult = Classification<InfraCategory>;
 
 export interface ComputeResponse {
   id: string;

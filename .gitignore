@@ -32,3 +32,7 @@ Archive.zip
 client/*.pcap
 client/127.0.0.1.*
 opencode.json
+
+# Generated eval outputs (harness writes these; fixtures stay tracked)
+tests/results_*.json
+tests/router_report.md
