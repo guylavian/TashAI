@@ -7,9 +7,8 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { MessageSchema } from "../types";
 import { chat, chatStream } from "../services/lmStudio";
-import { classify } from "../services/classifier";
-import { config } from "../config";
-import { activeRequests, classifierConfidence, requestDuration, requestsTotal, tokensTotal } from "../services/metrics";
+import { classify, resolveRoutedModel, routingDecisionLog } from "../services/classifier";
+import { activeRequests, recordClassification, recordRequest, requestsTotal } from "../services/metrics";
 
 const BodySchema = z.object({
   model: z.string().default("auto"),
@@ -19,6 +18,11 @@ const BodySchema = z.object({
   stream: z.boolean().optional().default(false),
   top_p: z.number().min(0).max(1).optional(),
   stop: z.string().or(z.array(z.string())).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  // Pass tool-calling through verbatim so agentic clients (opencode, etc.) work
+  // — the relay only routes; it must not strip the function-calling contract.
+  tools: z.array(z.unknown()).optional(),
+  tool_choice: z.unknown().optional(),
 });
 
 export async function openaiCompatRoutes(app: FastifyInstance): Promise<void> {
@@ -33,13 +37,13 @@ export async function openaiCompatRoutes(app: FastifyInstance): Promise<void> {
       let category = "general";
 
       if (useAuto) {
-        const classification = await classify(body.messages);
+        const classification = await classify(body.messages, body.metadata?.source as string | undefined);
         category = classification.category;
-        classifierConfidence.observe({ category }, classification.confidence);
-        model =
-          classification.confidence >= config.classifier.confidenceThreshold
-            ? (classification.recommended_model ?? config.routing.default)
-            : config.routing.default;
+        recordClassification(classification);
+        // Trust the engine's recommended_model — no redundant route-level gate
+        // (see resolveRoutedModel). Don't pass "auto" as a body override.
+        model = resolveRoutedModel(undefined, classification);
+        req.log.info(routingDecisionLog(classification, model), "routing decision");
 
         if (!model) {
           requestsTotal.inc({ model: "none", category, status: "error" });
@@ -52,6 +56,8 @@ export async function openaiCompatRoutes(app: FastifyInstance): Promise<void> {
         max_tokens: body.max_tokens,
         ...(body.top_p !== undefined && { top_p: body.top_p }),
         ...(body.stop !== undefined && { stop: body.stop }),
+        ...(body.tools !== undefined && { tools: body.tools }),
+        ...(body.tool_choice !== undefined && { tool_choice: body.tool_choice }),
       };
 
       // ── Streaming ──────────────────────────────────────────────────────────
@@ -59,39 +65,51 @@ export async function openaiCompatRoutes(app: FastifyInstance): Promise<void> {
         reply.raw.setHeader("content-type", "text/event-stream");
         reply.raw.setHeader("cache-control", "no-cache");
         reply.raw.setHeader("connection", "keep-alive");
+        // reply.raw bypasses Fastify's send path where @fastify/cors sets this.
+        reply.raw.setHeader("access-control-allow-origin", (reply.getHeader("access-control-allow-origin") as string) ?? "*");
         reply.raw.flushHeaders();
 
-        const stream = await chatStream(model, body.messages, opts);
         const id = `chatcmpl-${Date.now()}`;
+        let completionTokens = 0;
+        // Real usage from the final chunk when available; delta count otherwise.
+        let usage: { prompt_tokens: number; completion_tokens: number } | undefined;
 
-        for await (const chunk of stream) {
-          const delta = chunk.choices[0]?.delta ?? {};
-          const piece = {
-            id,
-            object: "chat.completion.chunk",
-            model,
-            choices: [{ index: 0, delta, finish_reason: chunk.choices[0]?.finish_reason ?? null }],
-          };
-          reply.raw.write(`data: ${JSON.stringify(piece)}\n\n`);
+        // Errors must be caught here — once headers are flushed, letting the
+        // exception reach Fastify's error handler crashes with ERR_HTTP_HEADERS_SENT.
+        try {
+          const stream = await chatStream(model, body.messages, opts);
+          for await (const chunk of stream) {
+            if (chunk.usage) usage = chunk.usage;
+            // The final usage chunk carries no choices — capture usage above and
+            // skip it so we don't emit a stray empty delta to the client.
+            if (chunk.choices.length === 0) continue;
+            const delta = chunk.choices[0]?.delta ?? {};
+            if ((delta as { content?: string }).content) completionTokens++;
+            const piece = {
+              id,
+              object: "chat.completion.chunk",
+              model,
+              choices: [{ index: 0, delta, finish_reason: chunk.choices[0]?.finish_reason ?? null }],
+            };
+            reply.raw.write(`data: ${JSON.stringify(piece)}\n\n`);
+          }
+          reply.raw.write("data: [DONE]\n\n");
+          // Prefer real usage; fall back to the delta count when it isn't returned.
+          if (usage) recordRequest({ model, category, status: "ok", startMs: start, usage });
+          else recordRequest({ model, category, status: "ok", startMs: start, completionTokens });
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : "stream error";
+          reply.raw.write(`data: ${JSON.stringify({ error: { message, type: "server_error" } })}\n\n`);
+          recordRequest({ model, category, status: "error", startMs: start });
+        } finally {
+          reply.raw.end();
         }
-        reply.raw.write("data: [DONE]\n\n");
-        reply.raw.end();
-
-        requestsTotal.inc({ model, category, status: "ok" });
-        requestDuration.observe({ model, category }, Date.now() - start);
         return;
       }
 
       // ── Non-streaming ──────────────────────────────────────────────────────
       const completion = await chat(model, body.messages, opts);
-
-      requestsTotal.inc({ model, category, status: "ok" });
-      requestDuration.observe({ model, category }, Date.now() - start);
-      if (completion.usage) {
-        tokensTotal.inc({ model, token_type: "prompt" }, completion.usage.prompt_tokens);
-        tokensTotal.inc({ model, token_type: "completion" }, completion.usage.completion_tokens);
-      }
-
+      recordRequest({ model, category, status: "ok", startMs: start, usage: completion.usage });
       return reply.send(completion);
     } finally {
       activeRequests.dec();
