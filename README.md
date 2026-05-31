@@ -1,56 +1,66 @@
 # LLM Relay
 
-On-premise AI relay server for enterprise infrastructure teams. Sits between your tools and [LM Studio](https://lmstudio.ai/), routing each query to the most appropriate local model based on domain and complexity — no GPU, no cloud, no data leaving the network.
+On-premise AI relay server for enterprise infrastructure teams. Sits between your tools and [LM Studio](https://lmstudio.ai/), routing each query to the most appropriate local model based on domain and complexity — no GPU rental, no cloud, no data leaving the network.
 
 ## Architecture
 
 ```
-CLI chat / Python client / OpenAI SDK
+CLI chat · Web console · OpenAI SDK · Open WebUI
               │
               ▼
      LLM Relay (Fastify/TS)  :3100
               │
-    ┌─────────┴──────────────────────────────────────────┐
-    │         SLLM Classifier (phi-3.5-mini)             │
-    │  Classifies domain + complexity · keyword fallback │
-    └──┬────────┬─────────┬────────┬────────┬────────────┘
-       │        │         │        │        │
-    network  openshift  windows  security  auto/general
-       │        │         │        │        │
-   phi-3.5  phi-3.5   phi-3.5   qwen-7b  gemma-4    (LM Studio :1234)
+   Generic classifier engine bound to an infra taxonomy
+   Tier 0 provenance  →  Tier 1 keyword  →  Tier 2 LLM (qwen-7b, single pass)
+              │
+   network  openshift  windows  security  monitoring  automation  general
+      │         │         │         │          │           │          │
+    phi      qwen-7b    phi      qwen-7b      phi        qwen-7b    gemma-4     (LM Studio :1234)
 ```
+
+### How routing decides
+
+The classifier is a generic engine (`src/services/routing/engine.ts`) driven entirely by a project taxonomy (`infra-taxonomy.ts`) — categories, keywords, aliases, provenance map and routing targets all come from that one source of truth. Three tiers, cheapest first:
+
+- **Tier 0 — provenance** (zero cost): an uploaded artifact's type routes directly. A `.pcap` → `network`, a `.evtx` / Windows event log → `windows`. Confidence 1.0, no model call.
+- **Tier 1 — keyword fast-path** (zero LLM cost): an org-specific term match (e.g. `deploymentconfig`, `get-winevent`, `qradar`) routes immediately.
+- **Tier 2 — LLM classifier**: when no keyword matches, a strong model (qwen) classifies in a single pass. Being strong, it connects implicit phrasing on the first try ("computer object" → `windows`, "container OOMKilled" → `openshift`) where smaller models confidently misfile to `general`. Aliases taught to the model (e.g. `kubernetes` → `openshift`) are normalized back to canonical categories. Below the confidence threshold it falls back to `ROUTE_DEFAULT`.
+
+> The engine also supports an optional **second-stage selector** (`CLASSIFIER_FALLBACK_MODEL`): a stronger model re-checks an unsure/`general` pick. That's only worthwhile with a *weak* primary classifier — with qwen as primary it's left disabled (there's no stronger model to escalate to).
+
+Results are cached (60 s TTL, bounded) so repeated queries skip classification entirely.
 
 ### Routing table
 
 | Category | Signals | Model |
 |---|---|---|
-| `network` | Cisco, Checkpoint, PaloAlto, Juniper, Alteon, F5, VLANs, BGP | phi-3.5-mini |
-| `openshift` | OpenShift/OCP, pods, DeploymentConfig, oc CLI, Helm, Routes | phi-3.5-mini |
-| `windows` | Active Directory, GPO, SCCM, Exchange, DFSR, SCOM, DC | phi-3.5-mini |
-| `security` | QRadar, Trellix, malware, brute-force, CVEs, threat hunting | qwen2.5-coder-7b |
-| `monitoring` | Prometheus, Splunk, Omnibus, Grafana, alert rules, SLOs | phi-3.5-mini |
-| `automation` | Ansible, Terraform, CI/CD, Red Hat Satellite, scripts | qwen2.5-coder-7b |
-| `general` | VMware, NetApp, Kafka, Redis, MongoDB, RHBK, RHEL | gemma-4 (default) |
+| `network` | Cisco, Checkpoint, PaloAlto, Juniper, Alteon, F5, VLANs, BGP, HSRP, Nexus, FortiGate | phi-3.5-mini |
+| `openshift` | OpenShift/OCP, **Kubernetes/k8s**, pods, DeploymentConfig, oc/kubectl, Helm, Routes | qwen2.5-coder-7b |
+| `windows` | Active Directory, GPO, SCCM, Exchange, DFSR, SCOM, DC, Kerberos, LDAP, ADFS | phi-3.5-mini |
+| `security` | QRadar, Trellix, malware, brute-force, CVEs, EDR/SIEM, threat hunting | qwen2.5-coder-7b |
+| `monitoring` | Prometheus, Splunk, Omnibus, Grafana, PromQL, Thanos, alert rules, SLOs | phi-3.5-mini |
+| `automation` | Ansible, Terraform, CI/CD, Satellite, Jenkins, AWX, GitOps, scripts | qwen2.5-coder-7b |
+| `general` | VMware, NetApp, Kafka, Redis, MongoDB, RHBK, RHEL, anything else | gemma-4 (default) |
 
-Complexity overrides: `simple` → lfm2.5-1.2b (fast path), `complex` → qwen2.5-coder-7b.
-
-Keyword fallback activates when classifier confidence is below threshold.
+Complexity overrides: `complex` → qwen2.5-coder-7b (any domain); `simple` → lfm2.5-1.2b, but **only for trivial `general` questions** — a domain task is never downgraded to the tiny model.
 
 ## Prerequisites
 
 - [LM Studio](https://lmstudio.ai/) running locally on port 1234
 - Node.js 20+
-- Python 3.11+ (for the CLI client)
+- Python 3.11+ (for the CLI client and the `/parse` + `/remote` parsers)
 - Docker + Docker Compose (for Prometheus + Grafana)
 
 ### Models to load in LM Studio
 
 | Model | Size | Role |
 |---|---|---|
-| `liquid/lfm2.5-1.2b` | ~0.8 GB | Fast path for simple queries |
-| `phi-3.5-mini-instruct` (Q4_K_M) | ~2.2 GB | Classifier + network/openshift/windows/monitoring |
-| `qwen2.5-coder-7b-instruct` (Q4_K_M) | ~4.4 GB | Security + automation + complex queries |
-| `google/gemma-4-e4b` | ~8 GB | Default fallback |
+| `liquid/lfm2.5-1.2b` | ~0.8 GB | Fast path for trivial general queries |
+| `phi-3.5-mini-instruct` (Q4_K_M) | ~2.2 GB | network / windows / monitoring |
+| `qwen2.5-coder-7b-instruct` (Q4_K_M) | ~4.4 GB | **Classifier** + openshift / security / automation / complex |
+| `google/gemma-4-e4b` | ~8 GB | Default fallback (`general`) |
+
+Tip: keep the classifier (qwen) **loaded** in LM Studio. The relay also warms hot-path models sequentially on boot, but keeping qwen resident avoids cold-load latency on the first keyword-miss query.
 
 ## Setup
 
@@ -62,12 +72,22 @@ cp .env.example .env   # edit if your LM Studio is on a different IP/port
 npm run dev            # starts on port 3100
 ```
 
+### Web console
+
+```bash
+cd web
+npm install
+npm run dev            # Vite dev server; talks to the relay on :3100
+```
+
+Streaming chat with a routing badge (which category/model/confidence answered), file attachments (wired to `/parse`), and a remote-log fetch panel (wired to `/remote`).
+
 ### Python client
 
 ```bash
 cd client
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -r requirements.txt   # includes scapy, python-evtx, paramiko, pywinrm
 cp .env.example .env
 ```
 
@@ -85,7 +105,7 @@ The dashboard loads automatically. No manual import needed.
 
 ## Usage
 
-### Live interactive chat
+### Live interactive chat (CLI)
 
 ```bash
 cd client
@@ -107,6 +127,8 @@ Supported file types: text/log files (inline), `.pcap`/`.pcapng` (parsed via Sca
 
 Chat commands: `/clear`, `/history`, `/models`, `/help`, `/exit`
 
+> The CLI only executes a suggested shell command from an explicitly shell-tagged code fence, after a y/N prompt — model prose and markdown are never run.
+
 ### Analyze infrastructure artifacts
 
 ```bash
@@ -124,12 +146,6 @@ Chat commands: `/clear`, `/history`, `/models`, `/help`, `/exit`
 
 Each command shows which model answered and token usage.
 
-### List available models
-
-```bash
-.venv/bin/python main.py models
-```
-
 ## API
 
 ### Auto-routed completion (recommended)
@@ -145,23 +161,33 @@ POST /compute/auto
 }
 ```
 
-Response includes `classification` — domain, complexity, confidence, and which model answered:
+Response includes `classification` — domain, complexity, confidence, the model that answered, and `reasoning` (the tier/stage that decided: `provenance`, `keyword fast-path`, `llm`, `llm (second-stage)`, …):
 
 ```json
 {
   "id": "...",
-  "model": "phi-3.5-mini-instruct",
+  "model": "qwen2.5-coder-7b-instruct",
   "content": "...",
   "classification": {
     "category": "openshift",
     "complexity": "medium",
     "confidence": 0.92,
-    "reasoning": "Pod lifecycle issue in OCP namespace"
+    "recommended_model": "qwen2.5-coder-7b-instruct",
+    "reasoning": "keyword fast-path"
   },
   "latency_ms": 1840,
   "usage": { "prompt_tokens": 38, "completion_tokens": 312, "total_tokens": 350 }
 }
 ```
+
+### File ingestion & remote log fetch
+
+```
+POST /parse           # upload a raw artifact → LLM-ready text + provenance source
+POST /remote          # fetch logs from a remote host (SSH or WinRM)
+```
+
+`/parse` accepts a raw `application/octet-stream` body with `?name=<filename>`; it shells out to the Python parsers (Scapy for pcap, python-evtx for evtx, switch-config parser) and returns parsed text plus a `source` that drives Tier-0 routing. `/remote` fetches logs over SSH (paramiko) or Windows Event Logs over WinRM (pywinrm); credentials are piped to the fetcher over stdin and never written to argv, logs or disk.
 
 ### Other endpoints
 
@@ -169,10 +195,13 @@ Response includes `classification` — domain, complexity, confidence, and which
 |---|---|---|
 | POST | `/compute/auto` | Auto-route via classifier |
 | POST | `/compute/:modelId` | Pin to a specific model |
-| POST | `/v1/chat/completions` | OpenAI-compatible (pass `"model": "auto"` to route) |
+| POST | `/compute` | Direct (model required in body) |
+| POST | `/v1/chat/completions` | OpenAI-compatible (pass `"model": "auto"` to route; tool-calling passed through) |
 | POST | `/compute/async` | Fire-and-forget with webhook callback |
+| POST | `/parse` | Parse an uploaded pcap/evtx/log/config artifact |
+| POST | `/remote` | Fetch remote logs via SSH / WinRM |
 | GET | `/health` | Server + LM Studio status |
-| GET | `/models` | List models loaded in LM Studio |
+| GET | `/models` | List models loaded in LM Studio (short-TTL cached) |
 | GET | `/metrics` | Prometheus scrape endpoint |
 | GET/POST/DELETE | `/webhooks` | Manage webhook subscriptions |
 
@@ -183,20 +212,36 @@ The relay exposes Prometheus metrics at `GET /metrics`:
 | Metric | Type | Description |
 |---|---|---|
 | `relay_requests_total` | counter | Requests by `model`, `category`, `status` |
-| `relay_tokens_total` | counter | Tokens by `model`, `token_type` (prompt/completion) |
+| `relay_tokens_total` | counter | Tokens by `model`, `token_type` (prompt/completion) — accurate for streamed responses |
 | `relay_request_duration_ms` | histogram | Latency by `model`, `category` |
 | `relay_classifier_confidence` | histogram | Classifier confidence by `category` |
+| `relay_classifier_stage_total` | counter | Decisions by `stage` — `keyword` (0 LLM) · `llm` (1) · `llm_second_stage` (2, the double call) · `provenance` · `fallback` |
 | `relay_active_requests` | gauge | In-flight requests |
+
+`relay_classifier_stage_total` lets you watch the share of traffic paying the double-call (gemma + qwen) before deciding whether to optimize it:
+
+```promql
+sum(rate(relay_classifier_stage_total{stage="llm_second_stage"}[5m]))
+/ sum(rate(relay_classifier_stage_total[5m]))
+```
 
 Grafana dashboard panels: requests/min by model, token consumption rate, category distribution donut, P50/P95 latency, classifier confidence heatmap, cumulative tokens per model.
 
 ## Test the router
 
-```bash
-cd client && .venv/bin/python ../test_router.py
-```
+The TypeScript eval harness runs the taxonomy against a labelled set and checks routing behavior:
 
-Runs 12 queries across all 6 infra categories and prints a routing accuracy table.
+```bash
+# A = classifier enabled, B = keyword-only (deterministic); then the report
+CLASSIFIER_ENABLED=true  npx tsx tests/eval.ts tests/results_A.json
+CLASSIFIER_ENABLED=false npx tsx tests/eval.ts tests/results_B.json
+npx tsx tests/report.ts        # prints accuracy + behavior checks
+
+# Alias normalization (kubernetes → openshift, etc.), no LM Studio needed
+ROUTE_DEFAULT=gemma ROUTE_OPENSHIFT=phi ROUTE_WINDOWS=phi ROUTE_NETWORK=phi \
+ROUTE_MONITORING=phi ROUTE_SECURITY=qwen ROUTE_AUTOMATION=qwen \
+npx tsx alias-normalization.test.ts
+```
 
 ## Configuration
 
@@ -206,11 +251,18 @@ All settings via `.env`:
 PORT=3100
 LM_STUDIO_URL=http://localhost:1234/v1
 
-CLASSIFIER_MODEL=phi-3.5-mini-instruct
-CLASSIFIER_CONFIDENCE_THRESHOLD=0.75   # below this → keyword fallback
+# Classifier — single strong pass (qwen)
+CLASSIFIER_MODEL=qwen2.5-coder-7b-instruct       # classifies keyword-miss queries
+CLASSIFIER_FALLBACK_MODEL=                        # optional second-stage; only useful with a weak primary
+CLASSIFIER_CONFIDENCE_THRESHOLD=0.5              # below this → ROUTE_DEFAULT
+CLASSIFIER_TIMEOUT_MS=12000                      # per-attempt timeout (request is aborted on expiry)
+CLASSIFIER_MAX_TOKENS=200
+CLASSIFIER_ENABLED=true
+WARM_MODELS=true                                 # warm hot-path models on boot (set false to skip)
 
+# Routing targets
 ROUTE_NETWORK=phi-3.5-mini-instruct
-ROUTE_OPENSHIFT=phi-3.5-mini-instruct
+ROUTE_OPENSHIFT=qwen2.5-coder-7b-instruct
 ROUTE_WINDOWS=phi-3.5-mini-instruct
 ROUTE_SECURITY=qwen2.5-coder-7b-instruct
 ROUTE_MONITORING=phi-3.5-mini-instruct
