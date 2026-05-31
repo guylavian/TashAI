@@ -7,8 +7,10 @@ import { modelsRoutes } from "./routes/models";
 import { webhooksRoutes } from "./routes/webhooks";
 import { openaiCompatRoutes } from "./routes/openai";
 import { metricsRoutes } from "./routes/metrics";
+import { parseRoutes } from "./routes/parse";
+import { remoteRoutes } from "./routes/remote";
 import { registerErrorHandler } from "./middleware/errorHandler";
-import { ping } from "./services/lmStudio";
+import { ping, chat } from "./services/lmStudio";
 
 const startTime = Date.now();
 
@@ -21,6 +23,11 @@ const app = Fastify({ logger: loggerConfig });
 
 async function bootstrap() {
   await app.register(cors, { origin: true });
+
+  // Raw file uploads for POST /parse arrive as octet-stream — buffer them.
+  app.addContentTypeParser("application/octet-stream", { parseAs: "buffer" }, (_req, body, done) =>
+    done(null, body)
+  );
 
   await app.register(rateLimit, {
     max: config.rateLimit.max,
@@ -54,9 +61,35 @@ async function bootstrap() {
   await app.register(modelsRoutes);
   await app.register(webhooksRoutes);
   await app.register(metricsRoutes); // GET /metrics — Prometheus scrape endpoint
+  await app.register(parseRoutes); // POST /parse — upload pcap/evtx/log → parsed text
+  await app.register(remoteRoutes); // POST /remote — SSH/WinRM log fetch
 
   await app.listen({ port: config.server.port, host: config.server.host });
   app.log.info(`LLM Relay running at http://${config.server.host}:${config.server.port}`);
+
+  // Warm the hot-path models sequentially (never concurrently — two cold JIT
+  // loads race and LM Studio cancels one). Best-effort, non-blocking; keeps the
+  // classifier from timing out to the default model on the first request.
+  void warmModels();
+}
+
+async function warmModels(): Promise<void> {
+  if (process.env.WARM_MODELS === "false") return;
+  const models = [
+    ...new Set(
+      [config.classifier.model, config.routing.default, config.routing.simple].filter(Boolean)
+    ),
+  ] as string[];
+
+  for (const model of models) {
+    try {
+      app.log.info(`warming ${model}…`);
+      await chat(model, [{ role: "user", content: "ok" }], { max_tokens: 1, temperature: 0 });
+      app.log.info(`warmed ${model}`);
+    } catch (err) {
+      app.log.warn(`warm-up skipped for ${model}: ${err instanceof Error ? err.message : "error"}`);
+    }
+  }
 }
 
 bootstrap().catch((err) => {
