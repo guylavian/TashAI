@@ -50,7 +50,32 @@ def from_file(file_path: str) -> list[str]:
 
 
 def _chunk(text: str) -> list[str]:
-    chunks = []
-    for i in range(0, len(text), CHUNK_CHARS):
-        chunks.append(text[i : i + CHUNK_CHARS])
+    # Split at top-level section boundaries (non-indented lines start a new section).
+    # This prevents cutting an interface or policy-map block in the middle.
+    sections: list[str] = []
+    current: list[str] = []
+    for line in text.splitlines():
+        if line and not line[0].isspace() and current:
+            sections.append("\n".join(current))
+            current = [line]
+        else:
+            current.append(line)
+    if current:
+        sections.append("\n".join(current))
+
+    # Pack sections into chunks up to CHUNK_CHARS
+    chunks: list[str] = []
+    buf: list[str] = []
+    buf_len = 0
+    for section in sections:
+        if buf and buf_len + len(section) > CHUNK_CHARS:
+            chunks.append("\n".join(buf))
+            buf = [section]
+            buf_len = len(section)
+        else:
+            buf.append(section)
+            buf_len += len(section)
+    if buf:
+        chunks.append("\n".join(buf))
+
     return chunks or ["(empty config)"]

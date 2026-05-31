@@ -1,17 +1,15 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 import crypto from "crypto";
 import { z } from "zod";
 import { ComputeRequestSchema } from "../types";
 import { chat, chatStream } from "../services/lmStudio";
-import { classify } from "../services/classifier";
+import { classify, resolveRoutedModel, routingDecisionLog } from "../services/classifier";
 import * as webhookService from "../services/webhook";
-import { config } from "../config";
 import {
   activeRequests,
-  classifierConfidence,
-  requestDuration,
+  recordClassification,
+  recordRequest,
   requestsTotal,
-  tokensTotal,
 } from "../services/metrics";
 
 type ComputeBody = z.infer<typeof ComputeRequestSchema>;
@@ -28,17 +26,22 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: "model is required for /compute — use /compute/auto for routing" });
     }
 
-    if (body.stream) return streamResponse(req, reply, body.model, body);
-
     const start = Date.now();
-    const completion = await chat(body.model, body.messages, {
-      temperature: body.temperature,
-      max_tokens: body.max_tokens,
-      top_p: body.top_p,
-      stop: body.stop,
-    });
+    activeRequests.inc();
+    try {
+      if (body.stream) return await streamResponse(reply, body.model, body, start, "direct");
 
-    return reply.send(buildResponse(completion, body.model, Date.now() - start));
+      const completion = await chat(body.model, body.messages, {
+        temperature: body.temperature,
+        max_tokens: body.max_tokens,
+        top_p: body.top_p,
+        stop: body.stop,
+      });
+      recordRequest({ model: body.model, category: "direct", status: "ok", startMs: start, usage: completion.usage });
+      return reply.send(buildResponse(completion, body.model, Date.now() - start));
+    } finally {
+      activeRequests.dec();
+    }
   });
 
   // ─── Auto-route via SLLM classifier ────────────────────────────────────────
@@ -48,17 +51,16 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
     activeRequests.inc();
 
     try {
-      const classification = await classify(body.messages);
+      const classification = await classify(body.messages, body.metadata?.source as string | undefined);
       const category = classification.category;
 
-      classifierConfidence.observe({ category }, classification.confidence);
+      recordClassification(classification);
 
-      const model =
-        body.model ||
-        (classification.confidence >= config.classifier.confidenceThreshold
-          ? classification.recommended_model
-          : config.routing.default) ||
-        "";
+      // Trust the engine: recommended_model is its final decision. The route
+      // must not re-gate on confidence (see resolveRoutedModel) — that second
+      // gate downgraded good mid-confidence picks to the default model.
+      const model = resolveRoutedModel(body.model, classification);
+      req.log.info(routingDecisionLog(classification, model), "routing decision");
 
       if (!model) {
         requestsTotal.inc({ model: "none", category, status: "error" });
@@ -68,7 +70,7 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      if (body.stream) return streamResponse(req, reply, model, body, classification);
+      if (body.stream) return await streamResponse(reply, model, body, start, category, classification);
 
       const completion = await chat(model, body.messages, {
         temperature: body.temperature,
@@ -78,13 +80,7 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
       });
 
       const latency = Date.now() - start;
-      requestsTotal.inc({ model, category, status: "ok" });
-      requestDuration.observe({ model, category }, latency);
-      if (completion.usage) {
-        tokensTotal.inc({ model, token_type: "prompt" }, completion.usage.prompt_tokens);
-        tokensTotal.inc({ model, token_type: "completion" }, completion.usage.completion_tokens);
-      }
-
+      recordRequest({ model, category, status: "ok", startMs: start, usage: completion.usage });
       return reply.send({ ...buildResponse(completion, model, latency), classification });
     } finally {
       activeRequests.dec();
@@ -96,17 +92,21 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
     const body = parseBody(req.body);
     const model = decodeURIComponent(req.params.modelId);
     const start = Date.now();
+    activeRequests.inc();
+    try {
+      if (body.stream) return await streamResponse(reply, model, body, start, "pinned");
 
-    if (body.stream) return streamResponse(req, reply, model, body);
-
-    const completion = await chat(model, body.messages, {
-      temperature: body.temperature,
-      max_tokens: body.max_tokens,
-      top_p: body.top_p,
-      stop: body.stop,
-    });
-
-    return reply.send(buildResponse(completion, model, Date.now() - start));
+      const completion = await chat(model, body.messages, {
+        temperature: body.temperature,
+        max_tokens: body.max_tokens,
+        top_p: body.top_p,
+        stop: body.stop,
+      });
+      recordRequest({ model, category: "pinned", status: "ok", startMs: start, usage: completion.usage });
+      return reply.send(buildResponse(completion, model, Date.now() - start));
+    } finally {
+      activeRequests.dec();
+    }
   });
 
   // ─── Async compute with webhook delivery ───────────────────────────────────
@@ -117,18 +117,21 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
 
     // Fire-and-forget — resolve in background
     setImmediate(async () => {
+      const start = Date.now();
+      activeRequests.inc();
+      let model = "";
+      let category = "general";
       try {
-        const start = Date.now();
-        const classification = await classify(body.messages);
+        const classification = await classify(body.messages, body.metadata?.source as string | undefined);
+        category = classification.category;
+        recordClassification(classification);
 
-        const model =
-          body.model ||
-          (classification.confidence >= config.classifier.confidenceThreshold
-            ? classification.recommended_model
-            : config.routing.default) ||
-          "";
+        // Trust the engine's recommended_model (see resolveRoutedModel).
+        model = resolveRoutedModel(body.model, classification);
+        req.log.info(routingDecisionLog(classification, model), "routing decision");
 
         if (!model) {
+          requestsTotal.inc({ model: "none", category, status: "error" });
           await webhookService.deliver("compute.error", jobId, {
             error: "No model resolved",
             classification,
@@ -143,6 +146,7 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
           stop: body.stop,
         });
 
+        recordRequest({ model, category, status: "ok", startMs: start, usage: completion.usage });
         const result = { ...buildResponse(completion, model, Date.now() - start), classification, job_id: jobId };
 
         // Deliver to ad-hoc webhook_url if provided
@@ -156,8 +160,11 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
 
         await webhookService.deliver("compute.done", jobId, result);
       } catch (err: unknown) {
+        recordRequest({ model: model || "none", category, status: "error", startMs: start });
         const message = err instanceof Error ? err.message : "Unknown error";
         await webhookService.deliver("compute.error", jobId, { error: message });
+      } finally {
+        activeRequests.dec();
       }
     });
 
@@ -193,35 +200,55 @@ function buildResponse(
 }
 
 async function streamResponse(
-  req: FastifyRequest,
   reply: any,
   model: string,
   body: ComputeBody,
+  start: number,
+  category: string,
   classification?: ClassificationResult
 ) {
   reply.raw.setHeader("content-type", "text/event-stream");
   reply.raw.setHeader("cache-control", "no-cache");
   reply.raw.setHeader("connection", "keep-alive");
+  // Writing to reply.raw bypasses Fastify's send path, where @fastify/cors adds
+  // this header — so forward it manually or the browser blocks the SSE response.
+  reply.raw.setHeader("access-control-allow-origin", (reply.getHeader("access-control-allow-origin") as string) ?? "*");
   reply.raw.flushHeaders();
 
   if (classification) {
     reply.raw.write(`data: ${JSON.stringify({ type: "classification", classification })}\n\n`);
   }
 
-  const stream = await chatStream(model, body.messages, {
-    temperature: body.temperature,
-    max_tokens: body.max_tokens,
-    top_p: body.top_p,
-    stop: body.stop,
-  });
+  let completionTokens = 0;
+  // Captured from the final usage chunk (empty choices) when LM Studio provides
+  // it; otherwise we degrade to the delta count below.
+  let usage: { prompt_tokens: number; completion_tokens: number } | undefined;
+  try {
+    const stream = await chatStream(model, body.messages, {
+      temperature: body.temperature,
+      max_tokens: body.max_tokens,
+      top_p: body.top_p,
+      stop: body.stop,
+    });
 
-  for await (const chunk of stream) {
-    const delta = chunk.choices[0]?.delta?.content;
-    if (delta) {
-      reply.raw.write(`data: ${JSON.stringify({ type: "chunk", content: delta })}\n\n`);
+    for await (const chunk of stream) {
+      if (chunk.usage) usage = chunk.usage;
+      const delta = chunk.choices[0]?.delta?.content;
+      if (delta) {
+        completionTokens++;
+        reply.raw.write(`data: ${JSON.stringify({ type: "chunk", content: delta })}\n\n`);
+      }
     }
-  }
 
-  reply.raw.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
-  reply.raw.end();
+    reply.raw.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
+    // Prefer real usage; fall back to the delta count when it isn't returned.
+    if (usage) recordRequest({ model, category, status: "ok", startMs: start, usage });
+    else recordRequest({ model, category, status: "ok", startMs: start, completionTokens });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "stream error";
+    reply.raw.write(`data: ${JSON.stringify({ type: "error", message })}\n\n`);
+    recordRequest({ model, category, status: "error", startMs: start });
+  } finally {
+    reply.raw.end();
+  }
 }

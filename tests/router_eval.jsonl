@@ -1,0 +1,68 @@
+{"expected":"network","content":"Cisco core switch — all interfaces in err-disabled state, what caused it?","source":null,"note":"seed; cisco+err-disabled"}
+{"expected":"network","content":"Checkpoint firewall is dropping traffic on port 443 from the DMZ to the backend VLAN","source":null,"note":"seed; checkpoint+vlan"}
+{"expected":"network","content":"BGP neighbor on the Juniper edge router keeps flapping every few minutes","source":null,"note":"juniper+bgp"}
+{"expected":"network","content":"Configure an F5 BigIP virtual server with SSL offload for the web pool","source":null,"note":"f5 big+bigip"}
+{"expected":"network","content":"Spanning-tree topology change storms on the Alteon switch uplink","source":null,"note":"alteon+spanning-tree"}
+{"expected":"network","content":"our f5 bigip load balancer keeps resetting idle connections","source":null,"note":"word-boundary: f5 bigip must match"}
+{"expected":"openshift","content":"Pods in the payments project are stuck in CrashLoopBackOff on OCP — how to debug?","source":null,"note":"seed; crashloopbackoff+ocp"}
+{"expected":"openshift","content":"Create an OpenShift Route with TLS passthrough for the internal API service","source":null,"note":"trap: Route is openshift NOT network"}
+{"expected":"openshift","content":"Scale the DeploymentConfig to 5 replicas and check rollout status","source":null,"note":"deploymentconfig"}
+{"expected":"openshift","content":"oc get pods shows ImagePullBackOff across the cluster","source":null,"note":"oc get"}
+{"expected":"openshift","content":"Install the cert-manager operator from OperatorHub on the cluster","source":null,"note":"operatorhub"}
+{"expected":"openshift","content":"The imagestream is not updating after a new build push","source":null,"note":"imagestream"}
+{"expected":"windows","content":"AD replication is broken between the two DCs — users cannot authenticate to Exchange","source":null,"note":"trap: auth failure is windows NOT security"}
+{"expected":"windows","content":"Deploy a GPO to disable USB storage on all Windows Server machines via SCCM","source":null,"note":"seed; gpo+sccm+windows server"}
+{"expected":"windows","content":"DFSR backlog is growing between the file servers in two sites","source":null,"note":"dfsr"}
+{"expected":"windows","content":"Analyze this Security.evtx for failed logon events 4625","source":null,"note":"security.evtx+evtx"}
+{"expected":"windows","content":"Active Directory domain controller will not start the netlogon service","source":null,"note":"active directory+domain controller"}
+{"expected":"windows","content":"Use Get-WinEvent to pull application errors from the last hour","source":null,"note":"get-winevent"}
+{"expected":"security","content":"QRadar is showing 500 failed SSH logins from the same source IP in under 3 minutes","source":null,"note":"seed; qradar"}
+{"expected":"security","content":"Trellix flagged malware on 3 endpoints in the finance VLAN — assess blast radius","source":null,"note":"seed; trellix+blast radius+malware"}
+{"expected":"security","content":"Investigate possible ransomware encryption activity on a file server","source":null,"note":"ransomware"}
+{"expected":"security","content":"Threat hunting for lateral movement after a phishing incident","source":null,"note":"threat hunting"}
+{"expected":"security","content":"Assess exposure to CVE-2024-3094 across our Linux fleet","source":null,"note":"cve-"}
+{"expected":"security","content":"Brute-force attempts detected against the VPN portal overnight","source":null,"note":"brute-force"}
+{"expected":"monitoring","content":"Prometheus alert rule for when Redis memory usage exceeds 85% for 5 minutes","source":null,"note":"seed; prometheus alert rule"}
+{"expected":"monitoring","content":"Splunk query to find all Checkpoint deny events in the last 6 hours by source IP","source":null,"note":"trap: Splunk query is monitoring NOT security/network"}
+{"expected":"monitoring","content":"Build a Grafana dashboard for per-model token consumption","source":null,"note":"grafana dashboard"}
+{"expected":"monitoring","content":"Write an Omnibus policy to suppress duplicate Netcool alerts","source":null,"note":"omnibus policy+netcool"}
+{"expected":"monitoring","content":"Tune the Prometheus rule that is firing too many false positives","source":null,"note":"prometheus rule"}
+{"expected":"monitoring","content":"Splunk search for spikes in 5xx responses on the API gateway","source":null,"note":"splunk search"}
+{"expected":"automation","content":"Ansible playbook to patch all RHEL servers and reboot only if the kernel changed","source":null,"note":"seed; ansible playbook"}
+{"expected":"automation","content":"Terraform module to provision a new PostgreSQL instance on OpenShift with PVC","source":null,"note":"trap cross-domain: IaC verb wins over openshift"}
+{"expected":"automation","content":"Write a Terraform plan to stand up three VMs in vSphere","source":null,"note":"terraform plan"}
+{"expected":"automation","content":"Create an SCCM task sequence to image new laptops","source":null,"note":"tie probe: sccm task sequence (automation4) vs sccm (windows4)"}
+{"expected":"automation","content":"Red Hat Satellite content view publish is failing on promote","source":null,"note":"red hat satellite"}
+{"expected":"automation","content":"Bash script to rotate and compress logs older than 7 days","source":null,"note":"low-signal: no keyword, needs LLM"}
+{"expected":"general","content":"VMware vSphere cluster shows high ballooning on three ESXi hosts","source":null,"note":"no keyword"}
+{"expected":"general","content":"NetApp aggregate is 95% full, how do I expand it safely","source":null,"note":"no keyword"}
+{"expected":"general","content":"Kafka consumer lag is climbing on the orders topic","source":null,"note":"no keyword"}
+{"expected":"general","content":"Redis latency spikes during the nightly batch job","source":null,"note":"no keyword"}
+{"expected":"general","content":"Postgres autovacuum is not keeping up on the events table","source":null,"note":"no keyword"}
+{"expected":"general","content":"RHEL 9 server will not mount the NFS share at boot","source":null,"note":"no keyword"}
+{"expected":"general","content":"Why is everything slow today?","source":null,"note":"ambiguous low-signal"}
+{"expected":"general","content":"Can you help me with the production issue from this morning?","source":null,"note":"ambiguous low-signal"}
+{"expected":"general","content":"san francisco datacenter has intermittent latency this week","source":null,"note":"word-boundary trap: cisco inside francisco must NOT match network"}
+{"expected":"network","content":"TCP retransmissions and DNS latency summary observed in this capture window","source":"pcap","note":"provenance: pcap -> network (no keyword in text)"}
+{"expected":"windows","content":"EventID 4625 failed logon audit record for a service account","source":"evtx","note":"provenance: evtx -> windows (no keyword in text)"}
+{"expected":"network","content":"interface GigabitEthernet0/1 switchport mode trunk no shutdown","source":"switch","note":"provenance: switch -> network (no keyword in text)"}
+{"expected":"network","content":"active directory replication failing between domain controllers","source":"pcap","note":"provenance precedence: pcap wins even though text screams windows"}
+{"expected":"windows","content":"{{PREFIX}} and the key fact is that ALPHA item one matters most here","source":null,"note":"cache-pair-a: no keyword, shares 200-char prefix with b"}
+{"expected":"network","content":"{{PREFIX}} and the key fact is that BETA item two matters most here","source":null,"note":"cache-pair-b: must classify independently of a (full-content cache key)"}
+{"expected":"network","content":"HSRP failover is not working on the core switch","source":null,"note":"new kw: hsrp"}
+{"expected":"network","content":"FortiGate policy is blocking traffic to the DMZ","source":null,"note":"new kw: fortigate"}
+{"expected":"network","content":"port-channel on the Nexus keeps going down","source":null,"note":"new kw: port-channel+nexus"}
+{"expected":"openshift","content":"buildconfig fails to push the image to Quay","source":null,"note":"new kw: buildconfig+quay"}
+{"expected":"openshift","content":"run oc adm policy to add a securitycontextconstraints to the service account","source":null,"note":"new kw: oc adm"}
+{"expected":"windows","content":"Kerberos pre-authentication is failing for several users","source":null,"note":"new kw: kerberos"}
+{"expected":"windows","content":"ADFS token-signing certificate expired overnight","source":null,"note":"new kw: adfs"}
+{"expected":"windows","content":"repadmin shows replication failures between sites","source":null,"note":"new kw: repadmin"}
+{"expected":"security","content":"EDR flagged a suspicious process beaconing to an external host","source":null,"note":"new kw: edr"}
+{"expected":"security","content":"write a SIEM correlation for repeated failed logins","source":null,"note":"new kw: siem"}
+{"expected":"monitoring","content":"Alertmanager is not firing for the promql rule","source":null,"note":"new kw: alertmanager+promql"}
+{"expected":"monitoring","content":"Thanos query latency is high across stores","source":null,"note":"new kw: thanos"}
+{"expected":"automation","content":"Jenkins pipeline is failing on the deploy stage","source":null,"note":"new kw: jenkins"}
+{"expected":"automation","content":"AWX job template will not launch the playbook","source":null,"note":"new kw: awx"}
+{"expected":"openshift","content":"how do I drain a kubernetes node for maintenance","source":null,"note":"new kw: kubernetes"}
+{"expected":"openshift","content":"kubectl rollout restart the deployment in the namespace","source":null,"note":"new kw: kubectl"}
+{"expected":"openshift","content":"the k8s daemonset is not scheduling on tainted nodes","source":null,"note":"new kw: k8s+daemonset"}
