@@ -19,11 +19,17 @@ def _get_client() -> OpenAI:
     return _client
 
 
-def analyze(system_prompt: str, user_content: str, model: str | None = None) -> dict:
-    """Send content to the relay and return {content, model, usage}."""
+def analyze(system_prompt: str, user_content: str, model: str | None = None,
+            source: str | None = None) -> dict:
+    """Send content to the relay and return {content, model, usage}.
+
+    `source` (e.g. "pcap", "evtx", "switch") lets the relay's classifier
+    skip the LLM round-trip via Tier-0 provenance routing.
+    """
     client = _get_client()
     pinned_model = model or os.getenv("RELAY_MODEL") or "auto"
 
+    extra_body = {"metadata": {"source": source}} if source else {}
     response = client.chat.completions.create(
         model=pinned_model,
         messages=[
@@ -32,6 +38,7 @@ def analyze(system_prompt: str, user_content: str, model: str | None = None) -> 
         ],
         temperature=0.2,
         max_tokens=4096,
+        extra_body=extra_body,
     )
     return {
         "content": response.choices[0].message.content or "",
@@ -44,11 +51,12 @@ def analyze(system_prompt: str, user_content: str, model: str | None = None) -> 
     }
 
 
-def analyze_chunks(system_prompt: str, chunks: list[str], label: str, model: str | None = None) -> list[str]:
+def analyze_chunks(system_prompt: str, chunks: list[str], label: str, model: str | None = None,
+                   source: str | None = None) -> list[str]:
     """Analyze multiple chunks and return one result per chunk."""
     results = []
     for i, chunk in enumerate(chunks, 1):
         print(f"  [{i}/{len(chunks)}] analyzing {label} chunk {i}...")
-        result = analyze(system_prompt, chunk, model)
+        result = analyze(system_prompt, chunk, model, source)
         results.append(result)
     return results

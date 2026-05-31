@@ -70,10 +70,11 @@ def logs(file: str, os_type: str, model: str | None, output: str | None):
 
     console.print(f"[green]✓[/green] {len(chunks)} chunk(s) — sending to relay\n")
 
+    source = "evtx" if os_type == "windows" else "logs_linux"
     results = []
     for i, chunk in enumerate(chunks, 1):
         console.print(f"[dim]Analyzing chunk {i}/{len(chunks)}...[/dim]")
-        result = relay.analyze(SYSTEM, chunk, model)
+        result = relay.analyze(SYSTEM, chunk, model, source)
         results.append(result)
 
     _print_results(results, f"Log Analysis — {Path(file).name}")
@@ -104,7 +105,7 @@ def pcap(file: str, model: str | None, output: str | None):
     results = []
     for i, chunk in enumerate(chunks, 1):
         console.print(f"[dim]Analyzing chunk {i}/{len(chunks)}...[/dim]")
-        result = relay.analyze(SYSTEM, chunk, model)
+        result = relay.analyze(SYSTEM, chunk, model, source="pcap")
         results.append(result)
 
     _print_results(results, f"PCAP Analysis — {Path(file).name}")
@@ -154,7 +155,7 @@ def switch(host: str | None, vendor: str, username: str | None, password: str | 
     results = []
     for i, chunk in enumerate(chunks, 1):
         console.print(f"[dim]Analyzing chunk {i}/{len(chunks)}...[/dim]")
-        result = relay.analyze(SYSTEM, chunk, model)
+        result = relay.analyze(SYSTEM, chunk, model, source="switch")
         results.append(result)
 
     _print_results(results, f"Switch Config Review — {label}")
@@ -180,7 +181,7 @@ def models():
     from dotenv import load_dotenv
 
     load_dotenv()
-    relay_url = os.getenv("RELAY_URL", "http://localhost:3100/v1").rstrip("/v1").rstrip("/")
+    relay_url = os.getenv("RELAY_URL", "http://localhost:3100").rstrip("/").removesuffix("/v1")
 
     try:
         resp = httpx.get(f"{relay_url}/models", timeout=5)
