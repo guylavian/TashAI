@@ -9,6 +9,7 @@ import { MessageSchema } from "../types";
 import { chatWithArtifacts, chatStreamWithArtifacts } from "../services/artifactTools";
 import { compactMessages } from "../services/historyCompactor";
 import { classify, resolveRoutedModel, routingDecisionLog } from "../services/classifier";
+import { tenantOf } from "../services/tenant";
 import { activeRequests, recordClassification, recordRequest, requestsTotal } from "../services/metrics";
 
 const BodySchema = z.object({
@@ -20,6 +21,9 @@ const BodySchema = z.object({
   top_p: z.number().min(0).max(1).optional(),
   stop: z.string().or(z.array(z.string())).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  // OpenAI standard end-user field — LiteLLM forwards it; it identifies the tenant
+  // (see tenantOf). Accepted here so the schema doesn't reject gateway traffic.
+  user: z.string().optional(),
   // Pass tool-calling through verbatim so agentic clients (opencode, etc.) work
   // — the relay only routes; it must not strip the function-calling contract.
   tools: z.array(z.unknown()).optional(),
@@ -28,8 +32,9 @@ const BodySchema = z.object({
 
 export async function openaiCompatRoutes(app: FastifyInstance): Promise<void> {
   app.post("/v1/chat/completions", async (req, reply) => {
+    const tenant = tenantOf(req);
     const body = BodySchema.parse(req.body);
-    body.messages = await compactMessages(body.messages);
+    body.messages = await compactMessages(body.messages, { tenant });
     const useAuto = !body.model || body.model === "auto";
     const start = Date.now();
     activeRequests.inc();
@@ -39,13 +44,13 @@ export async function openaiCompatRoutes(app: FastifyInstance): Promise<void> {
       let category = "general";
 
       if (useAuto) {
-        const classification = await classify(body.messages, body.metadata?.source as string | undefined);
+        const classification = await classify(body.messages, body.metadata?.source as string | undefined, tenant);
         category = classification.category;
         recordClassification(classification);
         // Trust the engine's recommended_model — no redundant route-level gate
         // (see resolveRoutedModel). Don't pass "auto" as a body override.
         model = resolveRoutedModel(undefined, classification);
-        req.log.info(routingDecisionLog(classification, model), "routing decision");
+        req.log.info(routingDecisionLog(classification, model, tenant), "routing decision");
 
         if (!model) {
           requestsTotal.inc({ model: "none", category, status: "error" });
@@ -79,7 +84,7 @@ export async function openaiCompatRoutes(app: FastifyInstance): Promise<void> {
         // Errors must be caught here — once headers are flushed, letting the
         // exception reach Fastify's error handler crashes with ERR_HTTP_HEADERS_SENT.
         try {
-          const stream = await chatStreamWithArtifacts(model, body.messages, opts);
+          const stream = await chatStreamWithArtifacts(model, body.messages, opts, tenant);
           for await (const chunk of stream) {
             if (chunk.usage) usage = chunk.usage;
             // The final usage chunk carries no choices — capture usage above and
@@ -110,7 +115,7 @@ export async function openaiCompatRoutes(app: FastifyInstance): Promise<void> {
       }
 
       // ── Non-streaming ──────────────────────────────────────────────────────
-      const completion = await chatWithArtifacts(model, body.messages, opts);
+      const completion = await chatWithArtifacts(model, body.messages, opts, tenant);
       recordRequest({ model, category, status: "ok", startMs: start, usage: completion.usage });
       return reply.send(completion);
     } finally {

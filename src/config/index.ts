@@ -37,8 +37,8 @@ export const config = {
     port: parseInt(optional("PORT", "3000"), 10),
     host: optional("HOST", "0.0.0.0"),
     logLevel: optional("LOG_LEVEL", "info"),
-    // Bearer token required for /remote and /parse (arbitrary remote commands /
-    // shells out to Python). Empty disables auth on those routes.
+    // Bearer token the gateway presents. When set it guards every route except
+    // GET /health and GET /metrics. Empty disables auth (standalone dev mode).
     apiKey: optional("RELAY_API_KEY", ""),
   },
 
@@ -85,17 +85,6 @@ export const config = {
   // Chat-history compaction budget (chars/4 ≈ tokens). Over budget → the middle
   // of the conversation is summarized by the tiny `routing.simple` model. 0 = off.
   historyBudgetTokens: parseInt(optional("HISTORY_BUDGET_TOKENS", "3000"), 10),
-
-  rateLimit: {
-    max: parseInt(optional("RATE_LIMIT_MAX", "100"), 10),
-    timeWindowMs: parseInt(optional("RATE_LIMIT_WINDOW_MS", "60000"), 10),
-  },
-
-  webhook: {
-    maxRetries: parseInt(optional("WEBHOOK_MAX_RETRIES", "3"), 10),
-    retryDelayMs: parseInt(optional("WEBHOOK_RETRY_DELAY_MS", "2000"), 10),
-    timeoutMs: parseInt(optional("WEBHOOK_TIMEOUT_MS", "10000"), 10),
-  },
 } as const;
 
 export type Config = typeof config;

@@ -22,7 +22,7 @@ const instance = createClassifier(infraTaxonomy, {
   classifier: config.classifier,
 });
 
-export const classify: (messages: Message[], source?: string) => Promise<ClassificationResult> =
+export const classify: (messages: Message[], source?: string, tenant?: string) => Promise<ClassificationResult> =
   instance.classify;
 
 export const resolveModel: (
@@ -52,7 +52,7 @@ export function resolveRoutedModel(
  * e.g. "keyword fast-path", "llm", "llm (second-stage)") and the model the
  * request will actually hit. Shared so every auto route logs the same shape.
  */
-export function routingDecisionLog(c: ClassificationResult, model: string) {
+export function routingDecisionLog(c: ClassificationResult, model: string, user?: string) {
   return {
     category: c.category,
     complexity: c.complexity,
@@ -60,5 +60,6 @@ export function routingDecisionLog(c: ClassificationResult, model: string) {
     reasoning: c.reasoning,
     recommended_model: c.recommended_model,
     model,
+    user,
   };
 }

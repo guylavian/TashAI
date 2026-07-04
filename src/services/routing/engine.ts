@@ -162,8 +162,10 @@ export function createClassifier<C extends string>(taxonomy: Taxonomy<C>, deps: 
 
   const cache = new Map<string, { result: Classification<C>; ts: number }>();
 
-  function cacheKey(content: string): string {
-    return crypto.createHash("sha1").update(`${content.length}:${content}`).digest("hex");
+  // Tenant is folded into the key so one tenant's cached classification is never
+  // served to another (the cache is a shared in-memory Map across all requests).
+  function cacheKey(content: string, tenant: string): string {
+    return crypto.createHash("sha1").update(`${tenant}:${content.length}:${content}`).digest("hex");
   }
 
   function cacheGet(key: string): Classification<C> | null {
@@ -312,7 +314,7 @@ export function createClassifier<C extends string>(taxonomy: Taxonomy<C>, deps: 
     }
   }
 
-  async function classify(messages: Message[], source?: string): Promise<Classification<C>> {
+  async function classify(messages: Message[], source?: string, tenant = "default"): Promise<Classification<C>> {
     // Tier 0 — provenance.
     if (source && sourceMap[source]) {
       const category = sourceMap[source];
@@ -326,7 +328,7 @@ export function createClassifier<C extends string>(taxonomy: Taxonomy<C>, deps: 
     }
 
     const lastContent = extractLastUserContent(messages);
-    const key = cacheKey(lastContent);
+    const key = cacheKey(lastContent, tenant);
     const cached = cacheGet(key);
     if (cached) return cached;
 

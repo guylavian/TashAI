@@ -19,19 +19,10 @@ export const ComputeRequestSchema = z.object({
   top_p: z.number().min(0).max(1).optional(),
   stop: z.string().or(z.array(z.string())).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
-  webhook_url: z.string().url().optional(),
-});
-
-export const WebhookRegisterSchema = z.object({
-  url: z.string().url(),
-  events: z.array(z.enum(["compute.done", "compute.error"])).default(["compute.done", "compute.error"]),
-  secret: z.string().optional(),
-  description: z.string().optional(),
 });
 
 export type Message = z.infer<typeof MessageSchema>;
 export type ComputeRequest = z.infer<typeof ComputeRequestSchema>;
-export type WebhookRegister = z.infer<typeof WebhookRegisterSchema>;
 
 /**
  * Single source of truth: derived from the engine's generic `Classification`
@@ -55,25 +46,6 @@ export interface ComputeResponse {
   classification?: ClassificationResult;
   latency_ms: number;
   created_at: string;
-}
-
-export interface AsyncComputeResponse {
-  job_id: string;
-  status: "queued";
-  webhook_url?: string;
-  created_at: string;
-}
-
-export interface WebhookRecord {
-  id: string;
-  url: string;
-  events: string[];
-  secret?: string;
-  description?: string;
-  created_at: string;
-  last_triggered?: string;
-  total_deliveries: number;
-  failed_deliveries: number;
 }
 
 export interface LMStudioModel {

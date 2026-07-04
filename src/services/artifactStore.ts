@@ -6,6 +6,10 @@
  * Bounded (FIFO, like the classifier cache in routing/engine.ts) and TTL'd — this
  * is a scratch buffer, not durable storage, so a lost entry just means the model
  * re-parses. Same size/staleness discipline as the classifier cache.
+ *
+ * Tenant-scoped: the internal map key is `${tenant} ${hash}`, so one tenant can
+ * never read another's artifact. The public hash (bare 40-hex, in the digest text)
+ * is unchanged — scoping is server-side only.
  */
 import crypto from "crypto";
 
@@ -22,9 +26,11 @@ const DEFAULT_MAX_CHARS = 8000;
 
 const store = new Map<string, Artifact>();
 
-export function put(text: string, name: string): string {
+const keyOf = (tenant: string, hash: string): string => `${tenant} ${hash}`;
+
+export function put(tenant: string, text: string, name: string): string {
   const hash = crypto.createHash("sha1").update(text).digest("hex");
-  store.set(hash, { text, name, ts: Date.now() });
+  store.set(keyOf(tenant, hash), { text, name, ts: Date.now() });
   // Map preserves insertion order → first key is oldest; FIFO-evict over cap.
   if (store.size > MAX_ENTRIES) {
     const oldest = store.keys().next().value;
@@ -33,11 +39,12 @@ export function put(text: string, name: string): string {
   return hash;
 }
 
-export function get(hash: string): Artifact | undefined {
-  const a = store.get(hash);
+export function get(tenant: string, hash: string): Artifact | undefined {
+  const k = keyOf(tenant, hash);
+  const a = store.get(k);
   if (!a) return undefined;
   if (Date.now() - a.ts >= TTL_MS) {
-    store.delete(hash); // evict on read once stale (TTL is only checked here)
+    store.delete(k); // evict on read once stale (TTL is only checked here)
     return undefined;
   }
   return a;
@@ -48,8 +55,8 @@ export function get(hash: string): Artifact | undefined {
  * context, capped at maxChars. No query → the head of the artifact. Returns
  * undefined if the artifact is gone (expired/unknown); a string otherwise.
  */
-export function slice(hash: string, query?: string, maxChars = DEFAULT_MAX_CHARS): string | undefined {
-  const a = get(hash);
+export function slice(tenant: string, hash: string, query?: string, maxChars = DEFAULT_MAX_CHARS): string | undefined {
+  const a = get(tenant, hash);
   if (!a) return undefined;
   if (!query) return a.text.slice(0, maxChars);
 

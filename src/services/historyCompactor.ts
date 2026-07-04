@@ -43,6 +43,7 @@ interface Deps {
   chat?: CompactChatFn;
   model?: string; // summarizer model; default config.routing.simple
   budget?: number; // token budget; default config.historyBudgetTokens
+  tenant?: string; // namespaces the summary cache; default "default"
 }
 
 const chars = (msgs: Message[]): number => msgs.reduce((n, m) => n + m.content.length, 0);
@@ -66,9 +67,10 @@ function windowStart(messages: Message[], firstNonSystem: number): number {
 async function summarize(
   chat: CompactChatFn,
   model: string,
-  middle: Message[]
+  middle: Message[],
+  tenant: string
 ): Promise<string | null> {
-  const key = crypto.createHash("sha1").update(middle.map((m) => `${m.role}:${m.content}`).join("\n")).digest("hex");
+  const key = crypto.createHash("sha1").update(`${tenant}\n` + middle.map((m) => `${m.role}:${m.content}`).join("\n")).digest("hex");
   const cached = summaryCache.get(key);
   if (cached !== undefined) return cached;
 
@@ -118,7 +120,7 @@ export async function compactMessages(messages: Message[], deps: Deps = {}): Pro
   const chat = deps.chat ?? (lmChat as CompactChatFn);
   const markers = markersIn(middle);
 
-  const summary = model ? await summarize(chat, model, middle) : null;
+  const summary = model ? await summarize(chat, model, middle, deps.tenant ?? "default") : null;
   const noteBody = summary
     ? `Summary of earlier conversation: ${summary}`
     : `[earlier ${middle.length} messages omitted]`;

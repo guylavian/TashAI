@@ -1,0 +1,41 @@
+# LiteLLM Gateway in front of the TashAI relay (SaaS mode). The gateway owns
+# per-user virtual API keys, budgets/quotas, rate limits and usage logging; the
+# relay (:3100) stays the trusted routing/compression upstream.
+#
+#   user (sk-user-key) → litellm (:4000) → relay (host.docker.internal:3100) → models
+#
+# Start:  LITELLM_MASTER_KEY=sk-master RELAY_API_KEY=relaysecret docker compose up -d
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: litellm
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:ro
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-master}
+      - DATABASE_URL=postgresql://litellm:litellm@postgres:5432/litellm
+      # Presented to the relay as the bearer token — must equal the relay's RELAY_API_KEY.
+      - RELAY_API_KEY=${RELAY_API_KEY:-relaysecret}
+    ports:
+      - "4000:4000"
+    # Relay runs on the host (same convention as the grafana stack).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    container_name: litellm-postgres
+    environment:
+      - POSTGRES_USER=litellm
+      - POSTGRES_PASSWORD=litellm
+      - POSTGRES_DB=litellm
+    volumes:
+      - litellm_pg:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  litellm_pg:

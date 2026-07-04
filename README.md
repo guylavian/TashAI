@@ -195,7 +195,7 @@ POST /remote          # fetch logs from a remote host (SSH or WinRM)
 
 `/parse` accepts a raw `application/octet-stream` body with `?name=<filename>`; it shells out to the Python parsers (Scapy for pcap, python-evtx for evtx, switch-config parser) and returns parsed text plus a `source` that drives Tier-0 routing. `/remote` fetches logs over SSH (paramiko) or Windows Event Logs over WinRM (pywinrm); credentials are piped to the fetcher over stdin and never written to argv, logs or disk.
 
-Set `RELAY_API_KEY` to require `Authorization: Bearer <key>` on `/remote` and `/parse` (both accept credentials or shell out to Python — the highest-risk surface). Empty (default) leaves them open, matching the rest of the relay.
+Set `RELAY_API_KEY` to require `Authorization: Bearer <key>` on every route except `GET /health` and `GET /metrics` (the gateway presents this key). Empty (default) leaves the relay open for standalone dev.
 
 #### Artifact offload
 
@@ -213,13 +213,40 @@ Clients resend the whole conversation every turn, which bloats context and slows
 | POST | `/compute/:modelId` | Pin to a specific model |
 | POST | `/compute` | Direct (model required in body) |
 | POST | `/v1/chat/completions` | OpenAI-compatible (pass `"model": "auto"` to route; tool-calling passed through) |
-| POST | `/compute/async` | Fire-and-forget with webhook callback |
 | POST | `/parse` | Parse an uploaded pcap/evtx/log/config artifact |
 | POST | `/remote` | Fetch remote logs via SSH / WinRM |
 | GET | `/health` | Server + LM Studio status |
 | GET | `/models` | List models loaded in LM Studio (short-TTL cached) |
 | GET | `/metrics` | Prometheus scrape endpoint |
-| GET/POST/DELETE | `/webhooks` | Manage webhook subscriptions |
+
+## Gateway (SaaS mode)
+
+For multi-user deployments the relay sits behind a **LiteLLM Gateway**, which owns per-user API keys, budgets/quotas, rate limits and usage logging (Postgres). The relay stays the trusted routing/compression upstream and only needs to know which end-user each request belongs to.
+
+```
+user (sk-user-key) → LiteLLM Gateway (:4000) → TashAI relay (:3100) → models
+```
+
+```bash
+# 1. Set RELAY_API_KEY in the relay's .env (the gateway presents it as the bearer);
+#    when set it guards every route except GET /health and GET /metrics.
+# 2. Start the gateway (LiteLLM + Postgres). Relay reached via host.docker.internal.
+cd gateway
+LITELLM_MASTER_KEY=sk-master RELAY_API_KEY=<same-as-relay> docker compose up -d
+
+# 3. Mint a per-user virtual key (budget/quota enforced by the gateway)
+curl http://localhost:4000/key/generate \
+  -H "Authorization: Bearer sk-master" -H "Content-Type: application/json" \
+  -d '{"models":["tashai-auto"],"max_budget":10,"user_id":"alice"}'
+
+# 4. End-user call — the `user` field identifies the tenant to the relay, which
+#    namespaces the artifact store and classifier/summary caches by it.
+curl http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer sk-..." -H "Content-Type: application/json" \
+  -d '{"model":"tashai-auto","user":"alice","messages":[{"role":"user","content":"why is my pod in CrashLoopBackOff?"}]}'
+```
+
+The tenant id also resolves from an `x-user-id` header (which takes priority over the body `user` field).
 
 ## Observability
 
