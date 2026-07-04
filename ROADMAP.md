@@ -11,9 +11,9 @@ Principle: TashAI's moat is taxonomy routing + artifact intelligence. Everything
 - `relay_tokens_saved_total` metric (Grafana)
 
 ## Phase 1 — multi-tenant readiness
-- [ ] **Fix the pre-SaaS blocker**: namespace artifact store + classification cache + summary cache by tenant (trusted `x-tenant-id` header from the gateway)
-- [ ] Deploy **LiteLLM Gateway** in front of the relay: per-user/team API keys, budgets & quotas, usage metering (billing), audit log to Postgres, per-tenant model allowlists. TashAI registers as an upstream model.
-- [ ] Persist `routingDecisionLog` output per-tenant (it already carries category/model/confidence/reasoning — that IS the audit trail)
+- [x] **Fix the pre-SaaS blocker**: artifact store + classification cache + summary cache are namespaced by tenant (`tenantOf`: `x-user-id` header → body `user` → `default`); `RELAY_API_KEY` now guards every route but `/health` + `/metrics`
+- [x] **LiteLLM Gateway** relay-side config shipped (`gateway/docker-compose.yml` + `gateway/litellm-config.yaml`): TashAI registered as the `tashai-auto` upstream; per-user keys/budgets/quotas/usage-logging owned by the gateway. (Deploying + wiring real Postgres/keys is ops.)
+- [x] `routingDecisionLog` now carries the tenant (`user` field) alongside category/model/confidence/reasoning — that IS the per-tenant audit trail; persisting it to a store is left to the gateway/ops layer
 
 ## Phase 2 — AI governance (gateway hook slots, not custom code)
 - [ ] **PII detection/redaction**: Microsoft Presidio on inbound prompts, per-tenant toggle (air-gap friendly)

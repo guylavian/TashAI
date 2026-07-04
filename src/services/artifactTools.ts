@@ -55,7 +55,8 @@ function isRetrieve(c: ToolCall): boolean {
 
 // Execute one retrieve_artifact call → a `tool` message to append. Credits the
 // tokens-saved metric with the delta between the full artifact and the slice.
-function runRetrieve(call: ToolCall): OAMsg {
+// Scoped to `tenant` so a caller can only pull its own tenant's artifacts.
+function runRetrieve(call: ToolCall, tenant: string): OAMsg {
   if (call.type !== "function") return { role: "tool", tool_call_id: call.id, content: "unsupported tool call" };
   let hash: string | undefined;
   let query: string | undefined;
@@ -66,12 +67,12 @@ function runRetrieve(call: ToolCall): OAMsg {
   } catch {
     /* malformed args → treated as miss below */
   }
-  const entry = hash ? artifactStore.get(hash) : undefined;
+  const entry = hash ? artifactStore.get(tenant, hash) : undefined;
   let content: string;
   if (!entry || !hash) {
     content = "artifact expired or unknown hash";
   } else {
-    content = artifactStore.slice(hash, query) ?? "artifact expired or unknown hash";
+    content = artifactStore.slice(tenant, hash, query) ?? "artifact expired or unknown hash";
     const saved = Math.round((entry.text.length - content.length) / 4);
     if (saved > 0) tokensSaved.inc({ reason: "artifact_slice" }, saved);
   }
@@ -85,6 +86,7 @@ async function resolveLoop(
   model: string,
   messages: Message[],
   merged: ChatOpts,
+  tenant: string,
   onFinal?: (c: OpenAI.Chat.ChatCompletion) => void
 ): Promise<OAMsg[]> {
   const msgs = messages.slice() as unknown as OAMsg[];
@@ -100,7 +102,7 @@ async function resolveLoop(
     }
     onFinal?.(completion);
     msgs.push(m as OAMsg);
-    for (const c of calls) msgs.push(runRetrieve(c));
+    for (const c of calls) msgs.push(runRetrieve(c, tenant));
   }
   return msgs;
 }
@@ -109,12 +111,13 @@ async function resolveLoop(
 export async function chatWithArtifacts(
   model: string,
   messages: Message[],
-  opts: ChatOpts = {}
+  opts: ChatOpts = {},
+  tenant = "default"
 ): Promise<OpenAI.Chat.ChatCompletion> {
   if (!hasArtifactRef(messages)) return chat(model, messages, opts);
   const merged = mergeTools(opts);
   let final: OpenAI.Chat.ChatCompletion | undefined;
-  await resolveLoop(model, messages, merged, (c) => (final = c));
+  await resolveLoop(model, messages, merged, tenant, (c) => (final = c));
   // `final` is set on every iteration; last one is the answer / foreign-tool call.
   return final ?? (await chat(model, messages, merged));
 }
@@ -123,11 +126,12 @@ export async function chatWithArtifacts(
 export async function chatStreamWithArtifacts(
   model: string,
   messages: Message[],
-  opts: ChatOpts = {}
+  opts: ChatOpts = {},
+  tenant = "default"
 ): Promise<AsyncIterable<OpenAI.Chat.ChatCompletionChunk>> {
   if (!hasArtifactRef(messages)) return chatStream(model, messages, opts);
   const merged = mergeTools(opts);
-  const msgs = await resolveLoop(model, messages, merged);
+  const msgs = await resolveLoop(model, messages, merged, tenant);
   // Re-issue the final state as a stream so the client still gets SSE. ponytail:
   // regenerates the last answer once (matches the "re-issue last state" spec).
   return chatStream(model, msgs as unknown as Message[], merged);

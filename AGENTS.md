@@ -7,12 +7,12 @@ Routes each query to the best local model via a 3-tier classifier. No cloud, no 
 
 | Path | What |
 |---|---|
-| `src/index.ts` | Fastify bootstrap (`:3100`), CORS, rate limit, auth hook, model warm-up |
+| `src/index.ts` | `buildApp()` wires CORS + auth hook + routes; bootstrap (`:3100` listen + model warm-up) runs only when executed directly |
 | `src/services/routing/engine.ts` | Generic classifier engine — tiers, cache, keyword matcher. Category-agnostic |
 | `src/services/routing/infra-taxonomy.ts` | THE source of truth: categories, keywords, aliases, provenance, routing targets |
 | `src/services/classifier.ts` | Binds engine + taxonomy + config; `resolveRoutedModel` |
 | `src/services/lmStudio.ts` | OpenAI SDK client for LM Studio; `chat` / `chatStream` / `listModels` |
-| `src/routes/` | `compute` (direct/auto/pinned/async), `openai` (`/v1/chat/completions`), `parse`, `remote`, `models`, `metrics`, `webhooks` |
+| `src/routes/` | `compute` (direct/auto/pinned), `openai` (`/v1/chat/completions`), `parse`, `remote`, `models`, `metrics` |
 | `client/` | Python CLI (`main.py chat`), parsers (pcap/evtx/switch), remote fetcher |
 | `web/` | Vite/React console |
 | `grafana/` | Prometheus + Grafana docker-compose, auto-provisioned dashboard |
@@ -62,7 +62,7 @@ Rules encoded in comments — respect them:
 - `/parse` shells out to `client/.venv/bin/python` (override with `PARSER_PYTHON`).
 - Grafana dashboard is auto-provisioned; edit `grafana/dashboard.json`, never hand-import.
 - History compaction (`historyCompactor.ts`) runs on every chat route before classify/chat: over `HISTORY_BUDGET_TOKENS` (default 3000, `0` off) it summarizes the middle with the tiny `ROUTE_SIMPLE` model, keeping system + last 4 turns; artifact `hash=` markers are preserved and it falls back to plain truncation — never fails the request.
-- **PRE-SAAS BLOCKER**: artifact store, classification cache, and summary cache are global in-memory — any client can `retrieve_artifact` any hash. Single-tenant by design. Before multi-user: namespace all three by tenant/API key (see ROADMAP.md).
+- Artifact store, classification cache, and summary cache are namespaced by tenant (`tenantOf(req)`: `x-user-id` header → body `user` → `default`) — a client can't `retrieve_artifact` another tenant's hash. `RELAY_API_KEY`, when set, guards every route except `GET /health` + `/metrics`. The LiteLLM Gateway (`gateway/`) sits in front and supplies the per-user identity.
 
 ## Scope rule
 

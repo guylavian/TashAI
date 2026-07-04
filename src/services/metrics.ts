@@ -13,7 +13,9 @@ export const requestsTotal = new Counter({
 export const tokensTotal = new Counter({
   name: "relay_tokens_total",
   help: "Total tokens consumed",
-  labelNames: ["model", "token_type"] as const, // prompt | completion
+  // user = tenant id from the gateway; one series per real user (bounded
+  // cardinality — fine for Prometheus up to ~10k users).
+  labelNames: ["model", "token_type", "user"] as const, // prompt | completion
   registers: [registry],
 });
 
@@ -96,14 +98,16 @@ export function recordRequest(opts: {
   startMs: number;
   usage?: { prompt_tokens: number; completion_tokens: number } | null;
   completionTokens?: number;
+  user?: string; // tenant id — drives the per-customer consumption panels
 }): void {
   const { model, category, status, startMs, usage, completionTokens } = opts;
+  const user = opts.user ?? "default";
   requestsTotal.inc({ model, category, status });
   requestDuration.observe({ model, category }, Date.now() - startMs);
   if (usage) {
-    tokensTotal.inc({ model, token_type: "prompt" }, usage.prompt_tokens);
-    tokensTotal.inc({ model, token_type: "completion" }, usage.completion_tokens);
+    tokensTotal.inc({ model, token_type: "prompt", user }, usage.prompt_tokens);
+    tokensTotal.inc({ model, token_type: "completion", user }, usage.completion_tokens);
   } else if (completionTokens && completionTokens > 0) {
-    tokensTotal.inc({ model, token_type: "completion" }, completionTokens);
+    tokensTotal.inc({ model, token_type: "completion", user }, completionTokens);
   }
 }

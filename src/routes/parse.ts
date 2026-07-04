@@ -12,6 +12,7 @@ import { writeFile, unlink, mkdtemp, rmdir } from "fs/promises";
 import os from "os";
 import path from "path";
 import * as artifactStore from "../services/artifactStore";
+import { tenantOf } from "../services/tenant";
 import { tokensSaved } from "../services/metrics";
 
 const CLIENT_DIR = path.join(process.cwd(), "client");
@@ -55,6 +56,7 @@ export async function parseRoutes(app: FastifyInstance): Promise<void> {
     "/parse",
     { bodyLimit: MAX_UPLOAD },
     async (req, reply) => {
+      const tenant = tenantOf(req);
       const body = req.body;
       if (!Buffer.isBuffer(body) || body.length === 0) {
         return reply.status(400).send({
@@ -85,7 +87,7 @@ export async function parseRoutes(app: FastifyInstance): Promise<void> {
         let artifact_hash: string | undefined;
         if (text.length > DIGEST_THRESHOLD) {
           const fullChars = text.length;
-          const hash = artifactStore.put(text, name);
+          const hash = artifactStore.put(tenant, text, name);
           const lines = text.split("\n");
           const head = lines.slice(0, DIGEST_HEAD_LINES).join("\n");
           const moreLines = lines.length - DIGEST_HEAD_LINES;
