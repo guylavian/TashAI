@@ -39,7 +39,7 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
         top_p: body.top_p,
         stop: body.stop,
       }, tenant);
-      recordRequest({ model: body.model, category: "direct", status: "ok", startMs: start, usage: completion.usage });
+      recordRequest({ model: body.model, category: "direct", status: "ok", startMs: start, usage: completion.usage, user: tenant });
       return reply.send(buildResponse(completion, body.model, Date.now() - start));
     } finally {
       activeRequests.dec();
@@ -84,7 +84,7 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
       }, tenant);
 
       const latency = Date.now() - start;
-      recordRequest({ model, category, status: "ok", startMs: start, usage: completion.usage });
+      recordRequest({ model, category, status: "ok", startMs: start, usage: completion.usage, user: tenant });
       return reply.send({ ...buildResponse(completion, model, latency), classification });
     } finally {
       activeRequests.dec();
@@ -111,7 +111,7 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
         top_p: body.top_p,
         stop: body.stop,
       }, tenant);
-      recordRequest({ model, category: "pinned", status: "ok", startMs: start, usage: completion.usage });
+      recordRequest({ model, category: "pinned", status: "ok", startMs: start, usage: completion.usage, user: tenant });
       return reply.send(buildResponse(completion, model, Date.now() - start));
     } finally {
       activeRequests.dec();
@@ -185,12 +185,12 @@ async function streamResponse(
 
     reply.raw.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
     // Prefer real usage; fall back to the delta count when it isn't returned.
-    if (usage) recordRequest({ model, category, status: "ok", startMs: start, usage });
-    else recordRequest({ model, category, status: "ok", startMs: start, completionTokens });
+    if (usage) recordRequest({ model, category, status: "ok", startMs: start, usage, user: tenant });
+    else recordRequest({ model, category, status: "ok", startMs: start, completionTokens, user: tenant });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "stream error";
     reply.raw.write(`data: ${JSON.stringify({ type: "error", message })}\n\n`);
-    recordRequest({ model, category, status: "error", startMs: start });
+    recordRequest({ model, category, status: "error", startMs: start, user: tenant });
   } finally {
     reply.raw.end();
   }

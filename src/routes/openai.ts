@@ -102,12 +102,12 @@ export async function openaiCompatRoutes(app: FastifyInstance): Promise<void> {
           }
           reply.raw.write("data: [DONE]\n\n");
           // Prefer real usage; fall back to the delta count when it isn't returned.
-          if (usage) recordRequest({ model, category, status: "ok", startMs: start, usage });
-          else recordRequest({ model, category, status: "ok", startMs: start, completionTokens });
+          if (usage) recordRequest({ model, category, status: "ok", startMs: start, usage, user: tenant });
+          else recordRequest({ model, category, status: "ok", startMs: start, completionTokens, user: tenant });
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : "stream error";
           reply.raw.write(`data: ${JSON.stringify({ error: { message, type: "server_error" } })}\n\n`);
-          recordRequest({ model, category, status: "error", startMs: start });
+          recordRequest({ model, category, status: "error", startMs: start, user: tenant });
         } finally {
           reply.raw.end();
         }
@@ -116,7 +116,7 @@ export async function openaiCompatRoutes(app: FastifyInstance): Promise<void> {
 
       // ── Non-streaming ──────────────────────────────────────────────────────
       const completion = await chatWithArtifacts(model, body.messages, opts, tenant);
-      recordRequest({ model, category, status: "ok", startMs: start, usage: completion.usage });
+      recordRequest({ model, category, status: "ok", startMs: start, usage: completion.usage, user: tenant });
       return reply.send(completion);
     } finally {
       activeRequests.dec();
