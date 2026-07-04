@@ -7,34 +7,49 @@
       "pluginId": "prometheus"
     }
   ],
-  "title": "LLM Relay — Model Consumption",
+  "title": "LLM Relay \u2014 Model Consumption",
   "uid": "llm-relay-consumption",
   "schemaVersion": 38,
   "version": 1,
   "refresh": "30s",
-  "time": { "from": "now-6h", "to": "now" },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "templating": {
     "list": [
       {
         "name": "model",
         "label": "Model",
         "type": "query",
-        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
         "query": "label_values(relay_requests_total, model)",
         "multi": true,
         "includeAll": true,
-        "current": { "text": "All", "value": "$__all" },
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
         "refresh": 2
       },
       {
         "name": "category",
         "label": "Category",
         "type": "query",
-        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
         "query": "label_values(relay_requests_total, category)",
         "multi": true,
         "includeAll": true,
-        "current": { "text": "All", "value": "$__all" },
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
         "refresh": 2
       }
     ]
@@ -44,95 +59,265 @@
       "id": 1,
       "title": "Active Requests",
       "type": "stat",
-      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "options": { "colorMode": "background", "graphMode": "none", "textMode": "auto" },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 3 }, { "color": "red", "value": 10 }] }
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
         }
       },
-      "targets": [{ "expr": "relay_active_requests", "legendFormat": "active" }]
+      "targets": [
+        {
+          "expr": "relay_active_requests",
+          "legendFormat": "active"
+        }
+      ]
     },
     {
       "id": 2,
       "title": "Total Requests (since start)",
       "type": "stat",
-      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "options": { "colorMode": "value", "graphMode": "area" },
-      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" } } },
-      "targets": [{ "expr": "sum(relay_requests_total{status=\"ok\"})", "legendFormat": "requests" }]
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(relay_requests_total{status=\"ok\"})",
+          "legendFormat": "requests"
+        }
+      ]
     },
     {
       "id": 3,
       "title": "Total Tokens Consumed (since start)",
       "type": "stat",
-      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "options": { "colorMode": "value", "graphMode": "area" },
-      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" } },
-      "targets": [{ "expr": "sum(relay_tokens_total)", "legendFormat": "tokens" }]
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(relay_tokens_total)",
+          "legendFormat": "tokens"
+        }
+      ]
     },
     {
       "id": 4,
       "title": "Error Rate",
       "type": "stat",
-      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "options": { "colorMode": "background" },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "colorMode": "background"
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
-          "color": { "mode": "thresholds" },
-          "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 0.05 }, { "color": "red", "value": 0.1 }] }
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 0.05
+              },
+              {
+                "color": "red",
+                "value": 0.1
+              }
+            ]
+          }
         }
       },
-      "targets": [{
-        "expr": "sum(rate(relay_requests_total{status=\"error\"}[5m])) / sum(rate(relay_requests_total[5m]))",
-        "legendFormat": "error rate"
-      }]
+      "targets": [
+        {
+          "expr": "sum(rate(relay_requests_total{status=\"error\"}[5m])) / sum(rate(relay_requests_total[5m]))",
+          "legendFormat": "error rate"
+        }
+      ]
     },
     {
       "id": 5,
       "title": "Requests / min by Model",
       "type": "timeseries",
-      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "options": { "tooltip": { "mode": "multi" } },
-      "fieldConfig": {
-        "defaults": { "custom": { "stacking": { "mode": "normal" }, "fillOpacity": 20 } }
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
       },
-      "targets": [{
-        "expr": "sum by (model) (rate(relay_requests_total{model=~\"$model\", status=\"ok\"}[1m])) * 60",
-        "legendFormat": "{{model}}"
-      }]
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 20
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (model) (rate(relay_requests_total{model=~\"$model\", status=\"ok\"}[1m])) * 60",
+          "legendFormat": "{{model}}"
+        }
+      ]
     },
     {
       "id": 6,
       "title": "Requests / min by Category",
       "type": "timeseries",
-      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "options": { "tooltip": { "mode": "multi" } },
-      "fieldConfig": {
-        "defaults": { "custom": { "stacking": { "mode": "normal" }, "fillOpacity": 20 } }
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
       },
-      "targets": [{
-        "expr": "sum by (category) (rate(relay_requests_total{category=~\"$category\", status=\"ok\"}[1m])) * 60",
-        "legendFormat": "{{category}}"
-      }]
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 20
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (category) (rate(relay_requests_total{category=~\"$category\", status=\"ok\"}[1m])) * 60",
+          "legendFormat": "{{category}}"
+        }
+      ]
     },
     {
       "id": 7,
       "title": "Token Consumption Rate (tokens/min)",
       "type": "timeseries",
-      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "options": { "tooltip": { "mode": "multi" } },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
       "fieldConfig": {
-        "defaults": { "custom": { "stacking": { "mode": "normal" }, "fillOpacity": 20 }, "unit": "short" }
+        "defaults": {
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 20
+          },
+          "unit": "short"
+        }
       },
       "targets": [
         {
@@ -149,78 +334,260 @@
       "id": 8,
       "title": "Category Distribution (last 1h)",
       "type": "piechart",
-      "gridPos": { "x": 12, "y": 12, "w": 6, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "options": { "pieType": "donut", "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "right" } },
-      "targets": [{
-        "expr": "sum by (category) (increase(relay_requests_total{status=\"ok\"}[1h]))",
-        "legendFormat": "{{category}}"
-      }]
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 6,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "pieType": "donut",
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (category) (increase(relay_requests_total{status=\"ok\"}[1h]))",
+          "legendFormat": "{{category}}"
+        }
+      ]
     },
     {
       "id": 9,
       "title": "Model Distribution (last 1h)",
       "type": "piechart",
-      "gridPos": { "x": 18, "y": 12, "w": 6, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "options": { "pieType": "donut", "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "right" } },
-      "targets": [{
-        "expr": "sum by (model) (increase(relay_requests_total{status=\"ok\"}[1h]))",
-        "legendFormat": "{{model}}"
-      }]
+      "gridPos": {
+        "x": 18,
+        "y": 12,
+        "w": 6,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "pieType": "donut",
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (model) (increase(relay_requests_total{status=\"ok\"}[1h]))",
+          "legendFormat": "{{model}}"
+        }
+      ]
     },
     {
       "id": 10,
       "title": "P95 Response Latency by Model (ms)",
       "type": "timeseries",
-      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "options": { "tooltip": { "mode": "multi" } },
-      "fieldConfig": { "defaults": { "unit": "ms" } },
-      "targets": [{
-        "expr": "histogram_quantile(0.95, sum by (model, le) (rate(relay_request_duration_ms_bucket{model=~\"$model\"}[5m])))",
-        "legendFormat": "p95 {{model}}"
-      }]
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (model, le) (rate(relay_request_duration_ms_bucket{model=~\"$model\"}[5m])))",
+          "legendFormat": "p95 {{model}}"
+        }
+      ]
     },
     {
       "id": 11,
       "title": "P50 Response Latency by Model (ms)",
       "type": "timeseries",
-      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "options": { "tooltip": { "mode": "multi" } },
-      "fieldConfig": { "defaults": { "unit": "ms" } },
-      "targets": [{
-        "expr": "histogram_quantile(0.50, sum by (model, le) (rate(relay_request_duration_ms_bucket{model=~\"$model\"}[5m])))",
-        "legendFormat": "p50 {{model}}"
-      }]
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (model, le) (rate(relay_request_duration_ms_bucket{model=~\"$model\"}[5m])))",
+          "legendFormat": "p50 {{model}}"
+        }
+      ]
     },
     {
       "id": 12,
       "title": "Classifier Confidence Distribution",
       "type": "heatmap",
-      "gridPos": { "x": 0, "y": 28, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "options": { "calculate": false, "yAxis": { "axisPlacement": "left" } },
-      "targets": [{
-        "expr": "sum by (le) (increase(relay_classifier_confidence_bucket[5m]))",
-        "legendFormat": "{{le}}",
-        "format": "heatmap"
-      }]
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "calculate": false,
+        "yAxis": {
+          "axisPlacement": "left"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (le) (increase(relay_classifier_confidence_bucket[5m]))",
+          "legendFormat": "{{le}}",
+          "format": "heatmap"
+        }
+      ]
     },
     {
       "id": 13,
       "title": "Tokens Consumed per Model (cumulative)",
       "type": "bargauge",
-      "gridPos": { "x": 12, "y": 28, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "options": { "orientation": "horizontal", "displayMode": "gradient" },
-      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "palette-classic" } } },
-      "targets": [{
-        "expr": "sum by (model) (relay_tokens_total)",
-        "legendFormat": "{{model}}",
-        "instant": true
-      }]
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (model) (relay_tokens_total)",
+          "legendFormat": "{{model}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Tokens Saved (headroom layer, cumulative)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "sum(relay_tokens_saved_total)",
+          "legendFormat": "saved",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Tokens Saved / min by Reason",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 36,
+        "w": 16,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(relay_tokens_saved_total[5m])) by (reason) * 60",
+          "legendFormat": "{{reason}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 15
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      }
     }
   ]
 }
