@@ -6,7 +6,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { MessageSchema } from "../types";
-import { chat, chatStream } from "../services/lmStudio";
+import { chatWithArtifacts, chatStreamWithArtifacts } from "../services/artifactTools";
+import { compactMessages } from "../services/historyCompactor";
 import { classify, resolveRoutedModel, routingDecisionLog } from "../services/classifier";
 import { activeRequests, recordClassification, recordRequest, requestsTotal } from "../services/metrics";
 
@@ -28,6 +29,7 @@ const BodySchema = z.object({
 export async function openaiCompatRoutes(app: FastifyInstance): Promise<void> {
   app.post("/v1/chat/completions", async (req, reply) => {
     const body = BodySchema.parse(req.body);
+    body.messages = await compactMessages(body.messages);
     const useAuto = !body.model || body.model === "auto";
     const start = Date.now();
     activeRequests.inc();
@@ -77,7 +79,7 @@ export async function openaiCompatRoutes(app: FastifyInstance): Promise<void> {
         // Errors must be caught here — once headers are flushed, letting the
         // exception reach Fastify's error handler crashes with ERR_HTTP_HEADERS_SENT.
         try {
-          const stream = await chatStream(model, body.messages, opts);
+          const stream = await chatStreamWithArtifacts(model, body.messages, opts);
           for await (const chunk of stream) {
             if (chunk.usage) usage = chunk.usage;
             // The final usage chunk carries no choices — capture usage above and
@@ -108,7 +110,7 @@ export async function openaiCompatRoutes(app: FastifyInstance): Promise<void> {
       }
 
       // ── Non-streaming ──────────────────────────────────────────────────────
-      const completion = await chat(model, body.messages, opts);
+      const completion = await chatWithArtifacts(model, body.messages, opts);
       recordRequest({ model, category, status: "ok", startMs: start, usage: completion.usage });
       return reply.send(completion);
     } finally {

@@ -189,6 +189,16 @@ POST /remote          # fetch logs from a remote host (SSH or WinRM)
 
 `/parse` accepts a raw `application/octet-stream` body with `?name=<filename>`; it shells out to the Python parsers (Scapy for pcap, python-evtx for evtx, switch-config parser) and returns parsed text plus a `source` that drives Tier-0 routing. `/remote` fetches logs over SSH (paramiko) or Windows Event Logs over WinRM (pywinrm); credentials are piped to the fetcher over stdin and never written to argv, logs or disk.
 
+Set `RELAY_API_KEY` to require `Authorization: Bearer <key>` on `/remote` and `/parse` (both accept credentials or shell out to Python — the highest-risk surface). Empty (default) leaves them open, matching the rest of the relay.
+
+#### Artifact offload
+
+Parsed text over ~4000 chars is not pasted whole into context. `/parse` stores the full text in an in-memory, TTL'd store (keyed by SHA-1) and returns a compact digest (first ~60 lines) plus `artifact_hash`. When a later message references `hash=<40-hex>`, the chat routes (`/compute*`, `/v1/chat/completions`) inject a `retrieve_artifact({hash, query})` tool and run a short tool loop so the model pulls only the slices it needs — instead of re-sending the whole artifact every turn. Estimated tokens saved are exported as `relay_tokens_saved_total{reason="artifact_digest"|"artifact_slice"}`.
+
+#### History compaction
+
+Clients resend the whole conversation every turn, which bloats context and slows small local models. Before classification/chat, every chat route runs `compactMessages`: under `HISTORY_BUDGET_TOKENS` (chars/4, default 3000, `0` disables) it's a zero-overhead passthrough; over budget it keeps the leading system message(s) + last 4 turns verbatim and replaces the middle with one `Summary of earlier conversation: …` system message produced by the tiny `ROUTE_SIMPLE` model (temperature 0, 10s timeout). If that model is unset or the summarize call fails it falls back to plain truncation (`[earlier N messages omitted]`) — compaction never fails the request. Artifact `hash=<40-hex>` markers in dropped messages are re-attached so `retrieve_artifact` still works. Summaries are cached (SHA-1 of the collapsed prefix). Savings export as `relay_tokens_saved_total{reason="history_compaction"}`.
+
 ### Other endpoints
 
 | Method | Path | Description |
@@ -250,11 +260,14 @@ All settings via `.env`:
 ```ini
 PORT=3100
 LM_STUDIO_URL=http://localhost:1234/v1
+# Per-model endpoint overrides (e.g. OpenShift AI — each model has its own route + token).
+# Models not listed fall back to LM_STUDIO_URL.
+MODEL_ENDPOINTS={"qwen2.5-coder-7b-instruct":{"url":"https://qwen.apps.cluster/v1","api_key":"sha256~..."}}
 
 # Classifier — single strong pass (qwen)
 CLASSIFIER_MODEL=qwen2.5-coder-7b-instruct       # classifies keyword-miss queries
 CLASSIFIER_FALLBACK_MODEL=                        # optional second-stage; only useful with a weak primary
-CLASSIFIER_CONFIDENCE_THRESHOLD=0.5              # below this → ROUTE_DEFAULT
+CLASSIFIER_CONFIDENCE_THRESHOLD=0.75             # below this → ROUTE_DEFAULT
 CLASSIFIER_TIMEOUT_MS=12000                      # per-attempt timeout (request is aborted on expiry)
 CLASSIFIER_MAX_TOKENS=200
 CLASSIFIER_ENABLED=true

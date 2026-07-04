@@ -11,11 +11,35 @@ function optional(key: string, fallback: string): string {
   return process.env[key] ?? fallback;
 }
 
+export interface ModelEndpoint {
+  url: string;
+  api_key?: string;
+}
+
+// Per-model endpoint overrides — fail fast on malformed JSON so a typo doesn't
+// silently route every model to the default endpoint.
+function parseEndpoints(raw: string): Record<string, ModelEndpoint> {
+  try {
+    const obj = JSON.parse(raw) as Record<string, ModelEndpoint>;
+    for (const [model, ep] of Object.entries(obj)) {
+      if (!ep || typeof ep.url !== "string" || !ep.url) {
+        throw new Error(`MODEL_ENDPOINTS["${model}"] must have a non-empty "url"`);
+      }
+    }
+    return obj;
+  } catch (err) {
+    throw new Error(`Invalid MODEL_ENDPOINTS JSON: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
 export const config = {
   server: {
     port: parseInt(optional("PORT", "3000"), 10),
     host: optional("HOST", "0.0.0.0"),
     logLevel: optional("LOG_LEVEL", "info"),
+    // Bearer token required for /remote and /parse (arbitrary remote commands /
+    // shells out to Python). Empty disables auth on those routes.
+    apiKey: optional("RELAY_API_KEY", ""),
   },
 
   lmStudio: {
@@ -23,6 +47,10 @@ export const config = {
     apiKey: optional("LM_STUDIO_API_KEY", "lm-studio"),
     timeoutMs: parseInt(optional("LM_STUDIO_TIMEOUT_MS", "120000"), 10),
     maxRetries: parseInt(optional("LM_STUDIO_MAX_RETRIES", "2"), 10),
+    // Per-model endpoint overrides (e.g. OpenShift AI serves each model on its
+    // own route with its own token). JSON: {"model-id":{"url":"https://…/v1","api_key":"…"}}.
+    // Models absent from the map use the default baseUrl/apiKey above.
+    endpoints: parseEndpoints(optional("MODEL_ENDPOINTS", "{}")),
   },
 
   classifier: {
@@ -53,6 +81,10 @@ export const config = {
     simple:  optional("ROUTE_SIMPLE",  ""),
     complex: optional("ROUTE_COMPLEX", ""),
   },
+
+  // Chat-history compaction budget (chars/4 ≈ tokens). Over budget → the middle
+  // of the conversation is summarized by the tiny `routing.simple` model. 0 = off.
+  historyBudgetTokens: parseInt(optional("HISTORY_BUDGET_TOKENS", "3000"), 10),
 
   rateLimit: {
     max: parseInt(optional("RATE_LIMIT_MAX", "100"), 10),

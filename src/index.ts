@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
@@ -40,6 +41,18 @@ async function bootstrap() {
   });
 
   registerErrorHandler(app);
+
+  // ─── Auth (guards /remote + /parse — arbitrary command / Python execution) ─
+  const apiKey = config.server.apiKey;
+  if (apiKey) {
+    const want = Buffer.from(apiKey);
+    app.addHook("onRequest", async (req, reply) => {
+      if (!req.url.startsWith("/remote") && !req.url.startsWith("/parse")) return;
+      const got = Buffer.from((req.headers.authorization || "").replace(/^Bearer /, ""));
+      const ok = got.length === want.length && crypto.timingSafeEqual(got, want);
+      if (!ok) return reply.code(401).send({ error: "unauthorized" });
+    });
+  }
 
   // ─── Health ─────────────────────────────────────────────────────────────
   app.get("/health", async (_req, reply) => {

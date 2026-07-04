@@ -2,7 +2,9 @@ import type { FastifyInstance } from "fastify";
 import crypto from "crypto";
 import { z } from "zod";
 import { ComputeRequestSchema } from "../types";
-import { chat, chatStream } from "../services/lmStudio";
+import { chat } from "../services/lmStudio";
+import { chatWithArtifacts, chatStreamWithArtifacts } from "../services/artifactTools";
+import { compactMessages } from "../services/historyCompactor";
 import { classify, resolveRoutedModel, routingDecisionLog } from "../services/classifier";
 import * as webhookService from "../services/webhook";
 import {
@@ -22,6 +24,7 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
   // ─── Direct compute — model must be provided in body ───────────────────────
   app.post("/compute", async (req, reply) => {
     const body = parseBody(req.body);
+    body.messages = await compactMessages(body.messages);
     if (!body.model) {
       return reply.status(400).send({ error: "model is required for /compute — use /compute/auto for routing" });
     }
@@ -31,7 +34,7 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
     try {
       if (body.stream) return await streamResponse(reply, body.model, body, start, "direct");
 
-      const completion = await chat(body.model, body.messages, {
+      const completion = await chatWithArtifacts(body.model, body.messages, {
         temperature: body.temperature,
         max_tokens: body.max_tokens,
         top_p: body.top_p,
@@ -47,6 +50,7 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
   // ─── Auto-route via SLLM classifier ────────────────────────────────────────
   app.post("/compute/auto", async (req, reply) => {
     const body = parseBody(req.body);
+    body.messages = await compactMessages(body.messages);
     const start = Date.now();
     activeRequests.inc();
 
@@ -72,7 +76,7 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
 
       if (body.stream) return await streamResponse(reply, model, body, start, category, classification);
 
-      const completion = await chat(model, body.messages, {
+      const completion = await chatWithArtifacts(model, body.messages, {
         temperature: body.temperature,
         max_tokens: body.max_tokens,
         top_p: body.top_p,
@@ -90,13 +94,14 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
   // ─── Pinned model ──────────────────────────────────────────────────────────
   app.post<{ Params: { modelId: string } }>("/compute/:modelId", async (req, reply) => {
     const body = parseBody(req.body);
+    body.messages = await compactMessages(body.messages);
     const model = decodeURIComponent(req.params.modelId);
     const start = Date.now();
     activeRequests.inc();
     try {
       if (body.stream) return await streamResponse(reply, model, body, start, "pinned");
 
-      const completion = await chat(model, body.messages, {
+      const completion = await chatWithArtifacts(model, body.messages, {
         temperature: body.temperature,
         max_tokens: body.max_tokens,
         top_p: body.top_p,
@@ -122,6 +127,7 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
       let model = "";
       let category = "general";
       try {
+        body.messages = await compactMessages(body.messages); // before classify/chat; off the 202 ack path
         const classification = await classify(body.messages, body.metadata?.source as string | undefined);
         category = classification.category;
         recordClassification(classification);
@@ -224,7 +230,7 @@ async function streamResponse(
   // it; otherwise we degrade to the delta count below.
   let usage: { prompt_tokens: number; completion_tokens: number } | undefined;
   try {
-    const stream = await chatStream(model, body.messages, {
+    const stream = await chatStreamWithArtifacts(model, body.messages, {
       temperature: body.temperature,
       max_tokens: body.max_tokens,
       top_p: body.top_p,

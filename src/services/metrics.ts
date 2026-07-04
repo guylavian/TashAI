@@ -17,6 +17,13 @@ export const tokensTotal = new Counter({
   registers: [registry],
 });
 
+export const tokensSaved = new Counter({
+  name: "relay_tokens_saved_total",
+  help: "Estimated prompt tokens saved by offloading artifacts (~chars/4)",
+  labelNames: ["reason"] as const, // artifact_digest | artifact_slice | history_compaction
+  registers: [registry],
+});
+
 export const requestDuration = new Histogram({
   name: "relay_request_duration_ms",
   help: "Request duration in milliseconds",

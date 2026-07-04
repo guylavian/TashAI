@@ -14,12 +14,12 @@ import type { ClassificationResult, Message } from "../types";
 
 const instance = createClassifier(infraTaxonomy, {
   chat,
-  classifier: {
-    ...config.classifier,
-    // Default the second-stage selector to the capable default model (gemma) so
-    // an uncertain pick gets re-classified by a stronger model before defaulting.
-    fallbackModel: config.classifier.fallbackModel || config.routing.default,
-  },
+  // Second-stage selector (fallbackModel) is disabled by default — empty string
+  // means the engine's `fbModel && fbModel !== deps.classifier.model` gate never
+  // fires. Only set CLASSIFIER_FALLBACK_MODEL when the primary classifier is
+  // weak; don't default it here or every low-confidence/"general" pick would
+  // silently re-hit ROUTE_DEFAULT (the biggest model) on a second LLM call.
+  classifier: config.classifier,
 });
 
 export const classify: (messages: Message[], source?: string) => Promise<ClassificationResult> =
