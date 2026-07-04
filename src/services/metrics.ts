@@ -101,7 +101,8 @@ export function recordRequest(opts: {
   user?: string; // tenant id — drives the per-customer consumption panels
 }): void {
   const { model, category, status, startMs, usage, completionTokens } = opts;
-  const user = opts.user ?? "default";
+  // Cap the label so a hostile/buggy tenant id can't balloon the registry.
+  const user = (opts.user ?? "default").slice(0, 64);
   requestsTotal.inc({ model, category, status });
   requestDuration.observe({ model, category }, Date.now() - startMs);
   if (usage) {

@@ -89,10 +89,12 @@ export async function parseRoutes(app: FastifyInstance): Promise<void> {
           const fullChars = text.length;
           const hash = artifactStore.put(tenant, text, name);
           const lines = text.split("\n");
-          const head = lines.slice(0, DIGEST_HEAD_LINES).join("\n");
-          const moreLines = lines.length - DIGEST_HEAD_LINES;
+          // Char-cap the head too: a single very long line (few-lines artifact)
+          // would otherwise put the whole text in the "digest" and save nothing.
+          const head = lines.slice(0, DIGEST_HEAD_LINES).join("\n").slice(0, DIGEST_THRESHOLD);
+          const moreLines = Math.max(0, lines.length - DIGEST_HEAD_LINES);
           const digest =
-            `${head}\n[... ${moreLines > 0 ? `${moreLines} more lines` : "truncated"} — full artifact stored, ` +
+            `${head}\n[... ${moreLines > 0 ? `${moreLines} more lines` : "content truncated"} — full artifact stored, ` +
             `hash=${hash}; the model can call retrieve_artifact({hash, query}) to pull specific slices ...]`;
           artifact_hash = hash;
           text = digest;

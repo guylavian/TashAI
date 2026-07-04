@@ -19,6 +19,7 @@ export interface ModelEndpoint {
 // Per-model endpoint overrides — fail fast on malformed JSON so a typo doesn't
 // silently route every model to the default endpoint.
 function parseEndpoints(raw: string): Record<string, ModelEndpoint> {
+  if (!raw.trim()) return {}; // MODEL_ENDPOINTS= (empty) means "no overrides", not a config error
   try {
     const obj = JSON.parse(raw) as Record<string, ModelEndpoint>;
     for (const [model, ep] of Object.entries(obj)) {
