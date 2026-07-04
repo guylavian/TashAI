@@ -72,6 +72,12 @@ cp .env.example .env   # edit if your LM Studio is on a different IP/port
 npm run dev            # starts on port 3100
 ```
 
+Or containerized (Node relay + Python parsers in one image; works with the Grafana stack unchanged):
+
+```bash
+docker compose up -d --build   # relay on :3100, LM Studio reached via host.docker.internal
+```
+
 ### Web console
 
 ```bash
