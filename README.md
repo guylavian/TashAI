@@ -72,6 +72,12 @@ cp .env.example .env   # edit if your LM Studio is on a different IP/port
 npm run dev            # starts on port 3100
 ```
 
+Or containerized (Node relay + Python parsers in one image; works with the Grafana stack unchanged):
+
+```bash
+docker compose up -d --build   # relay on :3100, LM Studio reached via host.docker.internal
+```
+
 ### Web console
 
 ```bash
@@ -189,6 +195,16 @@ POST /remote          # fetch logs from a remote host (SSH or WinRM)
 
 `/parse` accepts a raw `application/octet-stream` body with `?name=<filename>`; it shells out to the Python parsers (Scapy for pcap, python-evtx for evtx, switch-config parser) and returns parsed text plus a `source` that drives Tier-0 routing. `/remote` fetches logs over SSH (paramiko) or Windows Event Logs over WinRM (pywinrm); credentials are piped to the fetcher over stdin and never written to argv, logs or disk.
 
+Set `RELAY_API_KEY` to require `Authorization: Bearer <key>` on every route except `GET /health` and `GET /metrics` (the gateway presents this key). Empty (default) leaves the relay open for standalone dev.
+
+#### Artifact offload
+
+Parsed text over ~4000 chars is not pasted whole into context. `/parse` stores the full text in an in-memory, TTL'd store (keyed by SHA-1) and returns a compact digest (first ~60 lines) plus `artifact_hash`. When a later message references `hash=<40-hex>`, the chat routes (`/compute*`, `/v1/chat/completions`) inject a `retrieve_artifact({hash, query})` tool and run a short tool loop so the model pulls only the slices it needs — instead of re-sending the whole artifact every turn. Estimated tokens saved are exported as `relay_tokens_saved_total{reason="artifact_digest"|"artifact_slice"}`.
+
+#### History compaction
+
+Clients resend the whole conversation every turn, which bloats context and slows small local models. Before classification/chat, every chat route runs `compactMessages`: under `HISTORY_BUDGET_TOKENS` (chars/4, default 3000, `0` disables) it's a zero-overhead passthrough; over budget it keeps the leading system message(s) + last 4 turns verbatim and replaces the middle with one `Summary of earlier conversation: …` system message produced by the tiny `ROUTE_SIMPLE` model (temperature 0, 10s timeout). If that model is unset or the summarize call fails it falls back to plain truncation (`[earlier N messages omitted]`) — compaction never fails the request. Artifact `hash=<40-hex>` markers in dropped messages are re-attached so `retrieve_artifact` still works. Summaries are cached (SHA-1 of the collapsed prefix). Savings export as `relay_tokens_saved_total{reason="history_compaction"}`.
+
 ### Other endpoints
 
 | Method | Path | Description |
@@ -197,13 +213,40 @@ POST /remote          # fetch logs from a remote host (SSH or WinRM)
 | POST | `/compute/:modelId` | Pin to a specific model |
 | POST | `/compute` | Direct (model required in body) |
 | POST | `/v1/chat/completions` | OpenAI-compatible (pass `"model": "auto"` to route; tool-calling passed through) |
-| POST | `/compute/async` | Fire-and-forget with webhook callback |
 | POST | `/parse` | Parse an uploaded pcap/evtx/log/config artifact |
 | POST | `/remote` | Fetch remote logs via SSH / WinRM |
 | GET | `/health` | Server + LM Studio status |
 | GET | `/models` | List models loaded in LM Studio (short-TTL cached) |
 | GET | `/metrics` | Prometheus scrape endpoint |
-| GET/POST/DELETE | `/webhooks` | Manage webhook subscriptions |
+
+## Gateway (SaaS mode)
+
+For multi-user deployments the relay sits behind a **LiteLLM Gateway**, which owns per-user API keys, budgets/quotas, rate limits and usage logging (Postgres). The relay stays the trusted routing/compression upstream and only needs to know which end-user each request belongs to.
+
+```
+user (sk-user-key) → LiteLLM Gateway (:4000) → TashAI relay (:3100) → models
+```
+
+```bash
+# 1. Set RELAY_API_KEY in the relay's .env (the gateway presents it as the bearer);
+#    when set it guards every route except GET /health and GET /metrics.
+# 2. Start the gateway (LiteLLM + Postgres). Relay reached via host.docker.internal.
+cd gateway
+LITELLM_MASTER_KEY=sk-master RELAY_API_KEY=<same-as-relay> docker compose up -d
+
+# 3. Mint a per-user virtual key (budget/quota enforced by the gateway)
+curl http://localhost:4000/key/generate \
+  -H "Authorization: Bearer sk-master" -H "Content-Type: application/json" \
+  -d '{"models":["tashai-auto"],"max_budget":10,"user_id":"alice"}'
+
+# 4. End-user call — the `user` field identifies the tenant to the relay, which
+#    namespaces the artifact store and classifier/summary caches by it.
+curl http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer sk-..." -H "Content-Type: application/json" \
+  -d '{"model":"tashai-auto","user":"alice","messages":[{"role":"user","content":"why is my pod in CrashLoopBackOff?"}]}'
+```
+
+The tenant id also resolves from an `x-user-id` header (which takes priority over the body `user` field).
 
 ## Observability
 
@@ -250,11 +293,14 @@ All settings via `.env`:
 ```ini
 PORT=3100
 LM_STUDIO_URL=http://localhost:1234/v1
+# Per-model endpoint overrides (e.g. OpenShift AI — each model has its own route + token).
+# Models not listed fall back to LM_STUDIO_URL.
+MODEL_ENDPOINTS={"qwen2.5-coder-7b-instruct":{"url":"https://qwen.apps.cluster/v1","api_key":"sha256~..."}}
 
 # Classifier — single strong pass (qwen)
 CLASSIFIER_MODEL=qwen2.5-coder-7b-instruct       # classifies keyword-miss queries
 CLASSIFIER_FALLBACK_MODEL=                        # optional second-stage; only useful with a weak primary
-CLASSIFIER_CONFIDENCE_THRESHOLD=0.5              # below this → ROUTE_DEFAULT
+CLASSIFIER_CONFIDENCE_THRESHOLD=0.75             # below this → ROUTE_DEFAULT
 CLASSIFIER_TIMEOUT_MS=12000                      # per-attempt timeout (request is aborted on expiry)
 CLASSIFIER_MAX_TOKENS=200
 CLASSIFIER_ENABLED=true

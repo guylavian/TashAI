@@ -1,0 +1,27 @@
+# LiteLLM Gateway config for the TashAI relay.
+# One logical model `tashai-auto` → the relay's OpenAI-compatible endpoint, which
+# runs the full provenance/keyword/LLM routing + artifact/history compression. The
+# gateway forwards the end-user id (OpenAI `user` field) so the relay can namespace
+# per tenant.
+model_list:
+  - model_name: tashai-auto
+    litellm_params:
+      model: openai/auto            # "auto" → relay classifies + routes
+      api_base: http://host.docker.internal:3100/v1
+      api_key: os.environ/RELAY_API_KEY
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+
+# Create a per-user virtual key (budgets/quotas enforced by the gateway):
+#   curl http://localhost:4000/key/generate \
+#     -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+#     -H "Content-Type: application/json" \
+#     -d '{"models":["tashai-auto"],"max_budget":10,"user_id":"alice"}'
+#
+# End-user call (the returned sk-... key; `user` identifies the tenant to the relay):
+#   curl http://localhost:4000/v1/chat/completions \
+#     -H "Authorization: Bearer sk-..." \
+#     -H "Content-Type: application/json" \
+#     -d '{"model":"tashai-auto","user":"alice","messages":[{"role":"user","content":"why is my pod in CrashLoopBackOff?"}]}'

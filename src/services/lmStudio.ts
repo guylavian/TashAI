@@ -16,6 +16,26 @@ function getClient(): OpenAI {
   return clientInstance;
 }
 
+// Per-model clients for MODEL_ENDPOINTS overrides (OpenShift AI: each model has
+// its own route + token). Models without an override use the default client.
+const endpointClients = new Map<string, OpenAI>();
+
+function clientFor(model: string): OpenAI {
+  const ep = config.lmStudio.endpoints[model];
+  if (!ep) return getClient();
+  let client = endpointClients.get(model);
+  if (!client) {
+    client = new OpenAI({
+      baseURL: ep.url,
+      apiKey: ep.api_key || config.lmStudio.apiKey,
+      timeout: config.lmStudio.timeoutMs,
+      maxRetries: config.lmStudio.maxRetries,
+    });
+    endpointClients.set(model, client);
+  }
+  return client;
+}
+
 // Short TTL cache for the model list. Clients (Open WebUI, OpenAI SDK) poll
 // /models often, but the list changes rarely — caching collapses that into one
 // upstream round-trip per window. Health checks pass { fresh: true } so liveness
@@ -48,7 +68,7 @@ export async function chat(
     tool_choice?: unknown;
   } = {}
 ): Promise<OpenAI.Chat.ChatCompletion> {
-  const client = getClient();
+  const client = clientFor(model);
   // Forward the AbortSignal as a per-request option (2nd arg) so a timed-out
   // classifier call actually cancels the in-flight request instead of leaking it.
   return client.chat.completions.create(
@@ -81,7 +101,7 @@ export async function chatStream(
     tool_choice?: unknown;
   } = {}
 ): Promise<AsyncIterable<OpenAI.Chat.ChatCompletionChunk>> {
-  const client = getClient();
+  const client = clientFor(model);
   return client.chat.completions.create({
     model,
     messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],

@@ -1,0 +1,18 @@
+# Relay only. Monitoring stack stays in grafana/docker-compose.yml — its
+# Prometheus scrapes host.docker.internal:3100, which reaches the published
+# port below, so both compose files work together unchanged.
+services:
+  relay:
+    build: .
+    ports:
+      - "3100:3100"
+    environment:
+      - PORT=3100
+      # From inside the container, LM Studio on the host is host.docker.internal.
+      - LM_STUDIO_URL=${LM_STUDIO_URL:-http://host.docker.internal:1234/v1}
+    env_file:
+      - path: .env
+        required: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
