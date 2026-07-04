@@ -4,6 +4,9 @@
  * `user` body field is the standard fallback. Everything else is single-tenant
  * "default" (standalone dev mode). The id namespaces the artifact store and the
  * classifier / summary caches so tenants never see each other's data.
+ *
+ * Tenant scope is per-request, not per-connection — resolved fresh from each
+ * request's headers/body, so keep-alive connection reuse can't leak an identity.
  */
 import type { FastifyRequest } from "fastify";
 
