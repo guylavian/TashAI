@@ -49,7 +49,7 @@ export async function openaiCompatRoutes(app: FastifyInstance): Promise<void> {
         recordClassification(classification);
         // Trust the engine's recommended_model — no redundant route-level gate
         // (see resolveRoutedModel). Don't pass "auto" as a body override.
-        model = resolveRoutedModel(undefined, classification);
+        model = resolveRoutedModel(undefined, classification, body.messages);
         req.log.info(routingDecisionLog(classification, model, tenant), "routing decision");
 
         if (!model) {

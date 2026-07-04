@@ -63,7 +63,7 @@ export async function computeRoutes(app: FastifyInstance): Promise<void> {
       // Trust the engine: recommended_model is its final decision. The route
       // must not re-gate on confidence (see resolveRoutedModel) — that second
       // gate downgraded good mid-confidence picks to the default model.
-      const model = resolveRoutedModel(body.model, classification);
+      const model = resolveRoutedModel(body.model, classification, body.messages);
       req.log.info(routingDecisionLog(classification, model, tenant), "routing decision");
 
       if (!model) {
